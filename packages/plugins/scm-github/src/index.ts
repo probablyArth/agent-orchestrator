@@ -319,7 +319,7 @@ function createGitHubSCM(): SCM {
           `query=query($owner: String!, $name: String!, $number: Int!) {
             repository(owner: $owner, name: $name) {
               pullRequest(number: $number) {
-                reviewThreads(first: 100) {
+                reviewThreads(first: 250) {
                   nodes {
                     isResolved
                     comments(first: 1) {
@@ -395,9 +395,10 @@ function createGitHubSCM(): SCM {
 
     async getAutomatedComments(pr: PRInfo): Promise<AutomatedComment[]> {
       try {
-        // Single API call gets all review comments (including bot review comments)
+        // Single paginated API call gets all review comments (including bot review comments)
         const raw = await gh([
           "api",
+          "--paginate",
           `repos/${repoFlag(pr)}/pulls/${pr.number}/comments`,
         ]);
 
