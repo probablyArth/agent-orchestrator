@@ -25,6 +25,7 @@ const execFileAsync = promisify(execFile);
 async function gh(args: string[]): Promise<string> {
   const { stdout } = await execFileAsync("gh", args, {
     maxBuffer: 10 * 1024 * 1024,
+    timeout: 30_000,
   });
   return stdout.trim();
 }
@@ -270,8 +271,6 @@ function createGitHubTracker(): Tracker {
         input.title,
         "--body",
         input.description,
-        "--json",
-        "number,title,body,url,state,labels,assignees",
       ];
 
       if (input.labels && input.labels.length > 0) {
@@ -282,26 +281,17 @@ function createGitHubTracker(): Tracker {
         args.push("--assignee", input.assignee);
       }
 
-      const raw = await gh(args);
-      const data: {
-        number: number;
-        title: string;
-        body: string;
-        url: string;
-        state: string;
-        labels: Array<{ name: string }>;
-        assignees: Array<{ login: string }>;
-      } = JSON.parse(raw);
+      // gh issue create outputs the URL of the new issue
+      const url = await gh(args);
 
-      return {
-        id: String(data.number),
-        title: data.title,
-        description: data.body ?? "",
-        url: data.url,
-        state: "open",
-        labels: (data.labels ?? []).map((l) => l.name),
-        assignee: data.assignees?.[0]?.login,
-      };
+      // Extract issue number from URL and fetch full details
+      const match = url.match(/\/issues\/(\d+)/);
+      if (!match) {
+        throw new Error(`Failed to parse issue URL from gh output: ${url}`);
+      }
+      const number = match[1];
+
+      return this.getIssue(number, project);
     },
   };
 }

@@ -45,6 +45,14 @@ async function linearQuery<T>(
 
   return new Promise<T>((resolve, reject) => {
     const url = new URL(LINEAR_API_URL);
+    let settled = false;
+    const settle = (fn: () => void) => {
+      if (!settled) {
+        settled = true;
+        fn();
+      }
+    };
+
     const req = request(
       {
         hostname: url.hostname,
@@ -60,25 +68,35 @@ async function linearQuery<T>(
         const chunks: Buffer[] = [];
         res.on("data", (chunk: Buffer) => chunks.push(chunk));
         res.on("end", () => {
-          try {
-            const text = Buffer.concat(chunks).toString("utf-8");
-            const json: LinearResponse<T> = JSON.parse(text);
-            if (json.errors && json.errors.length > 0) {
-              reject(new Error(`Linear API error: ${json.errors[0].message}`));
-              return;
+          settle(() => {
+            try {
+              const text = Buffer.concat(chunks).toString("utf-8");
+              const json: LinearResponse<T> = JSON.parse(text);
+              if (json.errors && json.errors.length > 0) {
+                reject(new Error(`Linear API error: ${json.errors[0].message}`));
+                return;
+              }
+              if (!json.data) {
+                reject(new Error("Linear API returned no data"));
+                return;
+              }
+              resolve(json.data);
+            } catch (err) {
+              reject(err);
             }
-            if (!json.data) {
-              reject(new Error("Linear API returned no data"));
-              return;
-            }
-            resolve(json.data);
-          } catch (err) {
-            reject(err);
-          }
+          });
         });
       },
     );
-    req.on("error", reject);
+
+    req.setTimeout(30_000, () => {
+      settle(() => {
+        req.destroy();
+        reject(new Error("Linear API request timed out after 30s"));
+      });
+    });
+
+    req.on("error", (err) => settle(() => reject(err)));
     req.write(body);
     req.end();
   });
@@ -197,7 +215,13 @@ function createLinearTracker(): Tracker {
       return stateType === "completed" || stateType === "canceled";
     },
 
-    issueUrl(identifier: string, _project: ProjectConfig): string {
+    issueUrl(identifier: string, project: ProjectConfig): string {
+      const slug = project.tracker?.["workspaceSlug"] as string | undefined;
+      if (slug) {
+        return `https://linear.app/${slug}/issue/${identifier}`;
+      }
+      // Fallback: Linear also supports /issue/ URLs that redirect,
+      // but they require authentication
       return `https://linear.app/issue/${identifier}`;
     },
 
@@ -248,44 +272,44 @@ function createLinearTracker(): Tracker {
       filters: IssueFilters,
       project: ProjectConfig,
     ): Promise<Issue[]> {
-      // Build filter object for Linear's GraphQL API
-      const filterParts: string[] = [];
+      // Build filter object using GraphQL variables to prevent injection
+      const filter: Record<string, unknown> = {};
+      const variables: Record<string, unknown> = {};
 
       if (filters.state === "open") {
-        filterParts.push(`state: { type: { nin: ["completed", "canceled"] } }`);
+        filter["state"] = { type: { nin: ["completed", "canceled"] } };
       } else if (filters.state === "closed") {
-        filterParts.push(`state: { type: { in: ["completed", "canceled"] } }`);
+        filter["state"] = { type: { in: ["completed", "canceled"] } };
       }
 
       if (filters.assignee) {
-        filterParts.push(`assignee: { displayName: { eq: "${filters.assignee}" } }`);
+        filter["assignee"] = { displayName: { eq: filters.assignee } };
       }
 
       if (filters.labels && filters.labels.length > 0) {
-        filterParts.push(`labels: { name: { in: [${filters.labels.map((l) => `"${l}"`).join(", ")}] } }`);
+        filter["labels"] = { name: { in: filters.labels } };
       }
 
       // Add team filter if available from project config
-      const teamId = (project.tracker as Record<string, unknown> | undefined)?.["teamId"];
+      const teamId = project.tracker?.["teamId"];
       if (teamId) {
-        filterParts.push(`team: { id: { eq: "${teamId}" } }`);
+        filter["team"] = { id: { eq: teamId } };
       }
 
-      const filterStr =
-        filterParts.length > 0 ? `filter: { ${filterParts.join(", ")} }` : "";
-
-      const limit = filters.limit ?? 30;
+      variables["filter"] = Object.keys(filter).length > 0 ? filter : undefined;
+      variables["first"] = filters.limit ?? 30;
 
       const data = await linearQuery<{
         issues: { nodes: LinearIssueNode[] };
       }>(
-        `query {
-          issues(${filterStr} first: ${limit}) {
+        `query($filter: IssueFilter, $first: Int!) {
+          issues(filter: $filter, first: $first) {
             nodes {
               ${ISSUE_FIELDS}
             }
           }
         }`,
+        variables,
       );
 
       return data.issues.nodes.map((node) => ({
@@ -375,7 +399,7 @@ function createLinearTracker(): Tracker {
       input: CreateIssueInput,
       project: ProjectConfig,
     ): Promise<Issue> {
-      const teamId = (project.tracker as Record<string, unknown> | undefined)?.["teamId"];
+      const teamId = project.tracker?.["teamId"];
       if (!teamId) {
         throw new Error(
           "Linear tracker requires 'teamId' in project tracker config",
@@ -392,18 +416,36 @@ function createLinearTracker(): Tracker {
         variables["priority"] = input.priority;
       }
 
+      if (input.assignee) {
+        variables["assigneeName"] = input.assignee;
+      }
+
+      // Build label IDs variable parts
+      const varDecls = [
+        "$title: String!",
+        "$description: String!",
+        "$teamId: String!",
+        "$priority: Int",
+        ...(input.assignee ? ["$assigneeName: String"] : []),
+      ];
+
+      const inputFields = [
+        "title: $title",
+        "description: $description",
+        "teamId: $teamId",
+        "priority: $priority",
+        ...(input.assignee ? ["assigneeDisplayName: $assigneeName"] : []),
+      ];
+
       const data = await linearQuery<{
         issueCreate: {
           success: boolean;
           issue: LinearIssueNode;
         };
       }>(
-        `mutation($title: String!, $description: String!, $teamId: String!, $priority: Int) {
+        `mutation(${varDecls.join(", ")}) {
           issueCreate(input: {
-            title: $title,
-            description: $description,
-            teamId: $teamId,
-            priority: $priority
+            ${inputFields.join(",\n            ")}
           }) {
             success
             issue {
@@ -415,7 +457,7 @@ function createLinearTracker(): Tracker {
       );
 
       const node = data.issueCreate.issue;
-      return {
+      const issue: Issue = {
         id: node.identifier,
         title: node.title,
         description: node.description ?? "",
@@ -425,6 +467,45 @@ function createLinearTracker(): Tracker {
         assignee: node.assignee?.displayName ?? node.assignee?.name,
         priority: node.priority,
       };
+
+      // Add labels after creation (Linear's issueCreate doesn't accept label names directly)
+      if (input.labels && input.labels.length > 0) {
+        try {
+          // Look up label IDs by name for the team
+          const labelsData = await linearQuery<{
+            issueLabels: { nodes: Array<{ id: string; name: string }> };
+          }>(
+            `query($teamId: ID) {
+              issueLabels(filter: { team: { id: { eq: $teamId } } }) {
+                nodes { id name }
+              }
+            }`,
+            { teamId },
+          );
+
+          const labelMap = new Map(labelsData.issueLabels.nodes.map((l) => [l.name, l.id]));
+          const labelIds = input.labels
+            .map((name) => labelMap.get(name))
+            .filter((id): id is string => id !== undefined);
+
+          if (labelIds.length > 0) {
+            await linearQuery(
+              `mutation($id: String!, $labelIds: [String!]!) {
+                issueUpdate(id: $id, input: { labelIds: $labelIds }) {
+                  success
+                }
+              }`,
+              { id: node.id, labelIds },
+            );
+            // Reflect the labels we added
+            issue.labels = input.labels;
+          }
+        } catch {
+          // Labels are best-effort; don't fail the whole creation
+        }
+      }
+
+      return issue;
     },
   };
 }
