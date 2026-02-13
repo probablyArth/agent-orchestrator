@@ -299,14 +299,20 @@ function createGitHubSCM(): SCM {
 
     async getPendingComments(pr: PRInfo): Promise<ReviewComment[]> {
       try {
-        // Use GraphQL to get review threads with actual isResolved status
+        // Use GraphQL with variables to get review threads with actual isResolved status
         const raw = await gh([
           "api",
           "graphql",
           "-f",
-          `query=query {
-            repository(owner: "${pr.owner}", name: "${pr.repo}") {
-              pullRequest(number: ${pr.number}) {
+          `owner=${pr.owner}`,
+          "-f",
+          `name=${pr.repo}`,
+          "-F",
+          `number=${pr.number}`,
+          "-f",
+          `query=query($owner: String!, $name: String!, $number: Int!) {
+            repository(owner: $owner, name: $name) {
+              pullRequest(number: $number) {
                 reviewThreads(first: 100) {
                   nodes {
                     isResolved
@@ -358,7 +364,9 @@ function createGitHubSCM(): SCM {
 
         return threads
           .filter((t) => {
-            const author = t.comments.nodes[0]?.author?.login ?? "";
+            const c = t.comments.nodes[0];
+            if (!c) return false; // skip threads with no comments
+            const author = c.author?.login ?? "";
             return !BOT_AUTHORS.has(author);
           })
           .map((t) => {
@@ -472,11 +480,19 @@ function createGitHubSCM(): SCM {
         blockers.push("Review required");
       }
 
-      // Conflicts
+      // Conflicts / merge state
       const mergeable = (data.mergeable ?? "").toUpperCase();
+      const mergeState = (data.mergeStateStatus ?? "").toUpperCase();
       const noConflicts = mergeable !== "CONFLICTING";
       if (!noConflicts) {
         blockers.push("Merge conflicts");
+      } else if (mergeable === "UNKNOWN") {
+        blockers.push("Merge status unknown (GitHub is computing)");
+      }
+      if (mergeState === "BEHIND") {
+        blockers.push("Branch is behind base branch");
+      } else if (mergeState === "BLOCKED") {
+        blockers.push("Merge is blocked by branch protection");
       }
 
       // Draft

@@ -71,6 +71,11 @@ async function linearQuery<T>(
           settle(() => {
             try {
               const text = Buffer.concat(chunks).toString("utf-8");
+              const status = res.statusCode ?? 0;
+              if (status < 200 || status >= 300) {
+                reject(new Error(`Linear API returned HTTP ${status}: ${text.slice(0, 200)}`));
+                return;
+              }
               const json: LinearResponse<T> = JSON.parse(text);
               if (json.errors && json.errors.length > 0) {
                 reject(new Error(`Linear API error: ${json.errors[0].message}`));
@@ -370,16 +375,20 @@ function createLinearTracker(): Tracker {
           (s) => s.type === targetType,
         );
 
-        if (targetState) {
-          await linearQuery(
-            `mutation($id: String!, $stateId: String!) {
-              issueUpdate(id: $id, input: { stateId: $stateId }) {
-                success
-              }
-            }`,
-            { id: issueUuid, stateId: targetState.id },
+        if (!targetState) {
+          throw new Error(
+            `No workflow state of type "${targetType}" found for team ${teamId}`,
           );
         }
+
+        await linearQuery(
+          `mutation($id: String!, $stateId: String!) {
+            issueUpdate(id: $id, input: { stateId: $stateId }) {
+              success
+            }
+          }`,
+          { id: issueUuid, stateId: targetState.id },
+        );
       }
 
       // Handle comment
@@ -416,36 +425,18 @@ function createLinearTracker(): Tracker {
         variables["priority"] = input.priority;
       }
 
-      if (input.assignee) {
-        variables["assigneeName"] = input.assignee;
-      }
-
-      // Build label IDs variable parts
-      const varDecls = [
-        "$title: String!",
-        "$description: String!",
-        "$teamId: String!",
-        "$priority: Int",
-        ...(input.assignee ? ["$assigneeName: String"] : []),
-      ];
-
-      const inputFields = [
-        "title: $title",
-        "description: $description",
-        "teamId: $teamId",
-        "priority: $priority",
-        ...(input.assignee ? ["assigneeDisplayName: $assigneeName"] : []),
-      ];
-
       const data = await linearQuery<{
         issueCreate: {
           success: boolean;
           issue: LinearIssueNode;
         };
       }>(
-        `mutation(${varDecls.join(", ")}) {
+        `mutation($title: String!, $description: String!, $teamId: String!, $priority: Int) {
           issueCreate(input: {
-            ${inputFields.join(",\n            ")}
+            title: $title,
+            description: $description,
+            teamId: $teamId,
+            priority: $priority
           }) {
             success
             issue {
@@ -467,6 +458,37 @@ function createLinearTracker(): Tracker {
         assignee: node.assignee?.displayName ?? node.assignee?.name,
         priority: node.priority,
       };
+
+      // Assign after creation (Linear's issueCreate uses assigneeId, not display name)
+      if (input.assignee) {
+        try {
+          const usersData = await linearQuery<{
+            users: { nodes: Array<{ id: string; displayName: string; name: string }> };
+          }>(
+            `query($filter: UserFilter) {
+              users(filter: $filter) {
+                nodes { id displayName name }
+              }
+            }`,
+            { filter: { displayName: { eq: input.assignee } } },
+          );
+
+          const user = usersData.users.nodes[0];
+          if (user) {
+            await linearQuery(
+              `mutation($id: String!, $assigneeId: String!) {
+                issueUpdate(id: $id, input: { assigneeId: $assigneeId }) {
+                  success
+                }
+              }`,
+              { id: node.id, assigneeId: user.id },
+            );
+            issue.assignee = input.assignee;
+          }
+        } catch {
+          // Assignee is best-effort
+        }
+      }
 
       // Add labels after creation (Linear's issueCreate doesn't accept label names directly)
       if (input.labels && input.labels.length > 0) {

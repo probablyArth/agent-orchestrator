@@ -270,7 +270,7 @@ function createGitHubTracker(): Tracker {
         "--title",
         input.title,
         "--body",
-        input.description,
+        input.description ?? "",
       ];
 
       if (input.labels && input.labels.length > 0) {
