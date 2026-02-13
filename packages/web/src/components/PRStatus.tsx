@@ -3,13 +3,17 @@
 import type { DashboardPR } from "@/lib/types";
 import { CIBadge } from "./CIBadge";
 
+function getSizeLabel(additions: number, deletions: number): string {
+  const size = additions + deletions;
+  return size > 1000 ? "XL" : size > 500 ? "L" : size > 200 ? "M" : size > 50 ? "S" : "XS";
+}
+
 interface PRStatusProps {
   pr: DashboardPR;
 }
 
 export function PRStatus({ pr }: PRStatusProps) {
-  const size = pr.additions + pr.deletions;
-  const sizeLabel = size > 1000 ? "XL" : size > 500 ? "L" : size > 200 ? "M" : size > 50 ? "S" : "XS";
+  const sizeLabel = getSizeLabel(pr.additions, pr.deletions);
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">
@@ -63,8 +67,7 @@ interface PRTableRowProps {
 }
 
 export function PRTableRow({ pr }: PRTableRowProps) {
-  const size = pr.additions + pr.deletions;
-  const sizeLabel = size > 1000 ? "XL" : size > 500 ? "L" : size > 200 ? "M" : size > 50 ? "S" : "XS";
+  const sizeLabel = getSizeLabel(pr.additions, pr.deletions);
 
   const reviewLabel = pr.reviewDecision === "approved"
     ? "approved"

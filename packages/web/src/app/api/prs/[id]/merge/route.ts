@@ -8,6 +8,10 @@ export async function POST(
 ) {
   const { id } = await params;
   const prNumber = parseInt(id, 10);
+  if (isNaN(prNumber)) {
+    return NextResponse.json({ error: "Invalid PR number" }, { status: 400 });
+  }
+
   const session = mockSessions.find((s) => s.pr?.number === prNumber);
   if (!session?.pr) {
     return NextResponse.json({ error: "PR not found" }, { status: 404 });

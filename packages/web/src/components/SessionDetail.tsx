@@ -104,7 +104,7 @@ export function SessionDetail({ session }: SessionDetailProps) {
                     Blockers:
                   </span>
                   <ul className="mt-1 list-inside list-disc text-xs text-[var(--color-accent-red)]">
-                    {pr.mergeability.blockers.map((b) => (
+                    {pr.mergeability.blockers.map((b: string) => (
                       <li key={b}>{b}</li>
                     ))}
                   </ul>

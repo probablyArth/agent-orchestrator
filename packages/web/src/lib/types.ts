@@ -1,33 +1,42 @@
 /**
  * Dashboard-specific types for the web UI.
- * These extend/flatten the core types for client-side rendering.
+ *
+ * Core types (SessionStatus, ActivityState, CIStatus, ReviewDecision, etc.)
+ * are re-exported from @agent-orchestrator/core. Dashboard-specific types
+ * extend/flatten the core types for client-side rendering (e.g. DashboardPR
+ * flattens core PRInfo + MergeReadiness + CICheck[] + ReviewComment[]).
  */
 
-export type ActivityState = "active" | "idle" | "waiting_input" | "blocked" | "exited";
+// Re-export core types used directly by the dashboard
+export type {
+  SessionStatus,
+  ActivityState,
+  CIStatus,
+  ReviewDecision,
+  MergeReadiness,
+  PRState,
+} from "@agent-orchestrator/core";
 
-export type SessionStatus =
-  | "spawning"
-  | "working"
-  | "pr_open"
-  | "ci_failed"
-  | "review_pending"
-  | "changes_requested"
-  | "approved"
-  | "mergeable"
-  | "merged"
-  | "cleanup"
-  | "needs_input"
-  | "stuck"
-  | "errored"
-  | "killed";
-
-export type CIStatus = "pending" | "passing" | "failing" | "none";
-
-export type ReviewDecision = "approved" | "changes_requested" | "pending" | "none";
+import type {
+  CICheck as CoreCICheck,
+  MergeReadiness,
+  CIStatus,
+  SessionStatus,
+  ActivityState,
+  ReviewDecision,
+} from "@agent-orchestrator/core";
 
 /** Attention zone priority level */
 export type AttentionLevel = "urgent" | "action" | "warning" | "ok" | "done";
 
+/**
+ * Flattened session for dashboard rendering.
+ * Maps to core Session but uses string dates (JSON-serializable for SSR/client boundary)
+ * and inlines PR state.
+ *
+ * TODO: When wiring to real data, add a serialization layer that converts
+ * core Session (Date objects) → DashboardSession (string dates).
+ */
 export interface DashboardSession {
   id: string;
   projectId: string;
@@ -42,6 +51,10 @@ export interface DashboardSession {
   metadata: Record<string, string>;
 }
 
+/**
+ * Flattened PR for dashboard rendering.
+ * Aggregates core PRInfo + PRState + CICheck[] + MergeReadiness + ReviewComment[].
+ */
 export interface DashboardPR {
   number: number;
   url: string;
@@ -62,19 +75,20 @@ export interface DashboardPR {
   unresolvedComments: DashboardUnresolvedComment[];
 }
 
+/**
+ * Mirrors core CICheck but omits Date fields (not JSON-serializable).
+ * Core CICheck also has conclusion, startedAt, completedAt.
+ */
 export interface DashboardCICheck {
   name: string;
-  status: "pending" | "running" | "passed" | "failed" | "skipped";
+  status: CoreCICheck["status"];
   url?: string;
 }
 
-export interface DashboardMergeability {
-  mergeable: boolean;
-  ciPassing: boolean;
-  approved: boolean;
-  noConflicts: boolean;
-  blockers: string[];
-}
+/**
+ * Same shape as core MergeReadiness — re-exported for convenience.
+ */
+export type DashboardMergeability = MergeReadiness;
 
 export interface DashboardUnresolvedComment {
   url: string;
@@ -109,6 +123,12 @@ export function getAttentionLevel(session: DashboardSession): AttentionLevel {
     return "urgent";
   }
 
+  // Issue #11: check status-based CI/changes states before checking PR,
+  // so sessions with status "ci_failed" but pr: null still map to urgent.
+  if (session.status === "ci_failed" || session.status === "changes_requested") {
+    return "urgent";
+  }
+
   // Check PR-related states
   if (session.pr) {
     const pr = session.pr;
@@ -118,8 +138,8 @@ export function getAttentionLevel(session: DashboardSession): AttentionLevel {
       return "done";
     }
 
-    // Red zone: CI failed or changes requested with unresolved comments
-    if (pr.ciStatus === "failing" || session.status === "ci_failed") {
+    // Red zone: CI failed, changes requested, or merge conflicts
+    if (pr.ciStatus === "failing") {
       return "urgent";
     }
     if (pr.reviewDecision === "changes_requested" || !pr.mergeability.noConflicts) {
@@ -138,7 +158,7 @@ export function getAttentionLevel(session: DashboardSession): AttentionLevel {
   }
 
   // Grey zone: completed
-  if (session.status === "killed" || session.activity === "exited") {
+  if (session.status === "merged" || session.status === "killed" || session.activity === "exited") {
     return "done";
   }
 

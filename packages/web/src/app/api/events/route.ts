@@ -9,6 +9,8 @@ import { getAttentionLevel } from "@/lib/types";
  */
 export async function GET(): Promise<Response> {
   const encoder = new TextEncoder();
+  let heartbeat: ReturnType<typeof setInterval>;
+  let updates: ReturnType<typeof setInterval>;
 
   const stream = new ReadableStream({
     start(controller) {
@@ -28,16 +30,17 @@ export async function GET(): Promise<Response> {
       );
 
       // Send periodic heartbeat
-      const heartbeat = setInterval(() => {
+      heartbeat = setInterval(() => {
         try {
           controller.enqueue(encoder.encode(`: heartbeat\n\n`));
         } catch {
           clearInterval(heartbeat);
+          clearInterval(updates);
         }
       }, 15000);
 
       // Simulate activity updates every 5 seconds
-      const updates = setInterval(() => {
+      updates = setInterval(() => {
         try {
           const randomSession = mockSessions[Math.floor(Math.random() * mockSessions.length)];
           const event = {
@@ -57,6 +60,10 @@ export async function GET(): Promise<Response> {
         }
       }, 5000);
     },
+    cancel() {
+      clearInterval(heartbeat);
+      clearInterval(updates);
+    },
   });
 
   return new Response(stream, {
@@ -64,6 +71,7 @@ export async function GET(): Promise<Response> {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
     },
   });
 }

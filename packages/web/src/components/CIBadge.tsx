@@ -67,7 +67,7 @@ const checkStatusIcon: Record<DashboardCICheck["status"], { icon: string; color:
 
 export function CICheckList({ checks }: CICheckListProps) {
   const sorted = [...checks].sort((a, b) => {
-    const order = { failed: 0, running: 1, pending: 2, passed: 3, skipped: 4 };
+    const order: Record<DashboardCICheck["status"], number> = { failed: 0, running: 1, pending: 2, passed: 3, skipped: 4 };
     return order[a.status] - order[b.status];
   });
 

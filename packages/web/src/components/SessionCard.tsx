@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { DashboardSession, AttentionLevel } from "@/lib/types";
 import { getAttentionLevel } from "@/lib/types";
+import { cn } from "@/lib/cn";
 import { PRStatus } from "./PRStatus";
 import { CICheckList } from "./CIBadge";
 
@@ -32,13 +33,21 @@ const borderColorByLevel: Record<AttentionLevel, string> = {
 export function SessionCard({ session, onSend, onKill, onMerge }: SessionCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [sendingAction, setSendingAction] = useState<string | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const level = getAttentionLevel(session);
   const pr = session.pr;
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
 
   const handleAction = async (action: string, message: string) => {
     setSendingAction(action);
     onSend?.(session.id, message);
-    setTimeout(() => setSendingAction(null), 2000);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => setSendingAction(null), 2000);
   };
 
   const alerts = getAlerts(session);
@@ -46,7 +55,13 @@ export function SessionCard({ session, onSend, onKill, onMerge }: SessionCardPro
 
   return (
     <div
-      className={`cursor-pointer border border-[var(--color-border-default)] border-l-[3px] bg-[var(--color-bg-secondary)] transition-colors hover:border-[var(--color-border-emphasis)] ${borderColorByLevel[level]} ${expanded ? "border-[var(--color-border-emphasis)]" : ""} ${isReadyToMerge ? "border-[rgba(63,185,80,0.5)]" : ""} ${pr?.state === "merged" ? "opacity-75" : ""}`}
+      className={cn(
+        "cursor-pointer border border-[var(--color-border-default)] border-l-[3px] bg-[var(--color-bg-secondary)] transition-colors hover:border-[var(--color-border-emphasis)]",
+        borderColorByLevel[level],
+        expanded && "border-[var(--color-border-emphasis)]",
+        isReadyToMerge && "border-[rgba(63,185,80,0.5)]",
+        pr?.state === "merged" && "opacity-75",
+      )}
       style={{ borderRadius: 10 }}
       onClick={(e) => {
         if ((e.target as HTMLElement).closest("a, button, textarea")) return;
@@ -55,7 +70,7 @@ export function SessionCard({ session, onSend, onKill, onMerge }: SessionCardPro
     >
       {/* Top row */}
       <div className="flex items-center gap-2.5 px-4 pt-3 pb-1.5">
-        <span className={`shrink-0 text-sm ${session.activity === "active" ? "animate-[pulse_2s_ease-in-out_infinite]" : ""}`}>
+        <span className={cn("shrink-0 text-sm", session.activity === "active" && "animate-[pulse_2s_ease-in-out_infinite]")}>
           {activityIcon[session.activity] ?? "\u2753"}
         </span>
         <span className="shrink-0 text-[13px] font-semibold text-[var(--color-text-secondary)]">
@@ -112,7 +127,10 @@ export function SessionCard({ session, onSend, onKill, onMerge }: SessionCardPro
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={(e) => e.stopPropagation()}
-                  className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-0.5 text-xs font-bold hover:brightness-125 ${alert.className}`}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-md border px-3 py-0.5 text-xs font-bold hover:brightness-125",
+                    alert.className,
+                  )}
                 >
                   {alert.count !== undefined && (
                     <span className="text-sm font-extrabold">{alert.count}</span>

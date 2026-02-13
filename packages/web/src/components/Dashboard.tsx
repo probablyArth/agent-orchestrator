@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 import type { DashboardSession, DashboardStats, AttentionLevel } from "@/lib/types";
 import { getAttentionLevel } from "@/lib/types";
 import { AttentionZone } from "./AttentionZone";
@@ -34,21 +34,30 @@ export function Dashboard({ sessions, stats }: DashboardProps) {
   }, [sessions]);
 
   const handleSend = async (sessionId: string, message: string) => {
-    await fetch(`/api/sessions/${sessionId}/send`, {
+    const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/send`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message }),
     });
+    if (!res.ok) {
+      console.error(`Failed to send message to ${sessionId}:`, await res.text());
+    }
   };
 
   const handleKill = async (sessionId: string) => {
     if (!confirm(`Kill session ${sessionId}?`)) return;
-    await fetch(`/api/sessions/${sessionId}/kill`, { method: "POST" });
+    const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/kill`, { method: "POST" });
+    if (!res.ok) {
+      console.error(`Failed to kill ${sessionId}:`, await res.text());
+    }
   };
 
   const handleMerge = async (prNumber: number) => {
     if (!confirm(`Merge PR #${prNumber}?`)) return;
-    await fetch(`/api/prs/${prNumber}/merge`, { method: "POST" });
+    const res = await fetch(`/api/prs/${prNumber}/merge`, { method: "POST" });
+    if (!res.ok) {
+      console.error(`Failed to merge PR #${prNumber}:`, await res.text());
+    }
   };
 
   return (
@@ -58,9 +67,7 @@ export function Dashboard({ sessions, stats }: DashboardProps) {
         <h1 className="text-[22px] font-semibold tracking-tight">
           <span className="text-[#7c8aff]">Agent</span> Orchestrator
         </h1>
-        <span className="text-xs text-[var(--color-text-muted)]">
-          {new Date().toLocaleString()}
-        </span>
+        <ClientTimestamp />
       </div>
 
       {/* Stats bar */}
@@ -116,6 +123,17 @@ export function Dashboard({ sessions, stats }: DashboardProps) {
         </div>
       )}
     </div>
+  );
+}
+
+/** Renders timestamp client-side only to avoid hydration mismatch. */
+function ClientTimestamp() {
+  const [time, setTime] = useState<string>("");
+  useEffect(() => {
+    setTime(new Date().toLocaleString());
+  }, []);
+  return (
+    <span className="text-xs text-[var(--color-text-muted)]">{time}</span>
   );
 }
 

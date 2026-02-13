@@ -6,6 +6,11 @@ import type {
 /**
  * Mock data for the dashboard.
  * Covers all attention zones: urgent, action, warning, ok, done.
+ *
+ * TODO: Remove this file when wiring to real data sources. These fixtures
+ * are imported by API routes and pages, so they end up in the server bundle.
+ * Consider moving to __fixtures__/ or gating behind an env check once
+ * real SessionManager integration is in place.
  */
 
 const now = new Date();

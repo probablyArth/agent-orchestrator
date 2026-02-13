@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getMockSession } from "@/lib/mock-data";
+import { validateString } from "@/lib/validation";
+
+const MAX_MESSAGE_LENGTH = 10_000;
 
 /** POST /api/sessions/:id/send — Send a message to a session */
 export async function POST(
@@ -12,11 +15,14 @@ export async function POST(
     return NextResponse.json({ error: "Session not found" }, { status: 404 });
   }
 
-  const body = (await request.json().catch(() => null)) as { message?: string } | null;
-  if (!body?.message) {
-    return NextResponse.json({ error: "message is required" }, { status: 400 });
+  const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+  const messageErr = validateString(body?.message, "message", MAX_MESSAGE_LENGTH);
+  if (messageErr) {
+    return NextResponse.json({ error: messageErr }, { status: 400 });
   }
 
-  // TODO: wire to core SessionManager.send()
-  return NextResponse.json({ ok: true, sessionId: id, message: body.message });
+  const message = body!.message as string;
+
+  // TODO: wire to core SessionManager.send() — sanitize message before passing to shell-based runtimes
+  return NextResponse.json({ ok: true, sessionId: id, message });
 }
