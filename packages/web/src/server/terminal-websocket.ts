@@ -113,7 +113,8 @@ wss.on("connection", (ws, req) => {
           console.error(`[WebSocket] Failed to send keys:`, err);
         });
       } else if (msg.type === "resize" && msg.cols && msg.rows) {
-        // Resize tmux pane
+        // Resize tmux pane to match terminal
+        console.log(`[WebSocket] Resizing pane ${sessionId} to ${msg.cols}x${msg.rows}`);
         const resizeProcess = spawn("tmux", [
           "resize-pane",
           "-t",
@@ -125,7 +126,13 @@ wss.on("connection", (ws, req) => {
         ]);
 
         resizeProcess.on("error", (err) => {
-          console.error(`[WebSocket] Failed to resize:`, err);
+          console.error(`[WebSocket] Failed to resize:`, err.message);
+        });
+
+        resizeProcess.on("close", (code) => {
+          if (code === 0) {
+            console.log(`[WebSocket] Pane ${sessionId} resized successfully`);
+          }
         });
       }
     } catch {

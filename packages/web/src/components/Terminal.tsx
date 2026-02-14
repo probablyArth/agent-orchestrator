@@ -53,15 +53,30 @@ export function Terminal({ sessionId }: TerminalProps) {
     term.loadAddon(fitAddon);
     term.open(terminalRef.current);
 
-    // Initial fit
-    setTimeout(() => fitAddon.fit(), 50);
-
     xtermRef.current = term;
     fitAddonRef.current = fitAddon;
 
+    // Fit multiple times to ensure it happens after layout is ready
+    const doFit = () => {
+      try {
+        fitAddon.fit();
+        console.log(`[Terminal] Fitted to ${term.cols}x${term.rows}`);
+      } catch (err) {
+        console.warn("[Terminal] Fit failed:", err);
+      }
+    };
+
+    // Immediate fit
+    doFit();
+
+    // Retry fits with delays to catch layout changes
+    setTimeout(doFit, 100);
+    setTimeout(doFit, 250);
+    setTimeout(doFit, 500);
+
     // Handle window resize
     const handleResize = () => {
-      setTimeout(() => fitAddon.fit(), 50);
+      doFit();
     };
     window.addEventListener("resize", handleResize);
 
@@ -110,9 +125,9 @@ export function Terminal({ sessionId }: TerminalProps) {
 
     ws.addEventListener("open", () => {
       setConnected(true);
-      console.log("[Terminal] WebSocket connected");
+      console.log(`[Terminal] WebSocket connected, terminal size: ${term.cols}x${term.rows}`);
 
-      // Send initial terminal size
+      // Send initial terminal size to resize tmux pane
       ws.send(
         JSON.stringify({
           type: "resize",
@@ -200,7 +215,7 @@ export function Terminal({ sessionId }: TerminalProps) {
       <div
         ref={terminalRef}
         className={cn(
-          "p-2",
+          "p-2 w-full",
           fullscreen ? "h-[calc(100vh-40px)]" : "h-[600px]",
         )}
       />
