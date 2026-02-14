@@ -18,6 +18,7 @@ import { createServer, request } from "node:http";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { loadConfig } from "@agent-orchestrator/core";
+import { validateIdentifier } from "../lib/validation.js";
 
 interface TtydInstance {
   sessionId: string;
@@ -154,17 +155,24 @@ function getOrSpawnTtyd(sessionId: string): TtydInstance {
   // Use once() for cleanup handlers to prevent race condition when both exit and error fire
   proc.once("exit", (code) => {
     console.log(`[Terminal] ttyd ${sessionId} exited with code ${code}`);
-    instances.delete(sessionId);
-    // Recycle port for reuse
-    availablePorts.add(port);
+    // Only delete if this is still the current instance (prevents race with error handler)
+    const current = instances.get(sessionId);
+    if (current?.process === proc) {
+      instances.delete(sessionId);
+      // Recycle port for reuse
+      availablePorts.add(port);
+    }
   });
 
   proc.once("error", (err) => {
     console.error(`[Terminal] ttyd ${sessionId} error:`, err.message);
-    // Clean up instance on spawn error to prevent leak
-    instances.delete(sessionId);
-    // Recycle port for reuse
-    availablePorts.add(port);
+    // Only delete if this is still the current instance (prevents race with exit handler)
+    const current = instances.get(sessionId);
+    if (current?.process === proc) {
+      instances.delete(sessionId);
+      // Recycle port for reuse
+      availablePorts.add(port);
+    }
     // Kill any running process
     try {
       proc.kill();
@@ -213,6 +221,14 @@ const server = createServer(async (req, res) => {
     if (!sessionId) {
       res.writeHead(400, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "Missing session parameter" }));
+      return;
+    }
+
+    // Validate session ID to prevent path traversal and injection
+    const idErr = validateIdentifier(sessionId, "session");
+    if (idErr) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: idErr }));
       return;
     }
 
