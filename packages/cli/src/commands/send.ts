@@ -98,7 +98,13 @@ export function registerSend(program: Command): void {
 
         // Send the message
         if (opts.file) {
-          const content = readFileSync(opts.file, "utf-8");
+          let content: string;
+          try {
+            content = readFileSync(opts.file, "utf-8");
+          } catch (err) {
+            console.error(chalk.red(`Cannot read file: ${opts.file} (${err})`));
+            process.exit(1);
+          }
           const tmpFile = join(tmpdir(), `ao-send-${Date.now()}.txt`);
           writeFileSync(tmpFile, content);
           try {

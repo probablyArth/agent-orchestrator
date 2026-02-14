@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, symlinkSync, unlinkSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, symlinkSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import chalk from "chalk";
 import ora from "ora";
@@ -10,6 +10,14 @@ import { banner } from "../lib/format.js";
 import { getAgent } from "../lib/plugins.js";
 import { escapeRegex } from "../lib/session-utils.js";
 
+/**
+ * Find the next available session number for a prefix.
+ *
+ * There is an inherent TOCTOU gap between reading the session list and creating
+ * the tmux session. If two spawns race, tmux new-session will fail with a
+ * duplicate name error, which spawnSession already handles by throwing to the
+ * caller (batch-spawn catches per-item failures and continues).
+ */
 async function getNextSessionNumber(prefix: string): Promise<number> {
   const sessions = await getTmuxSessions();
   let max = 0;
@@ -99,7 +107,8 @@ async function spawnSession(
       const dest = join(worktreePath, file);
       if (existsSync(src) && !existsSync(dest)) {
         try {
-          symlinkSync(src, dest);
+          const type = lstatSync(src).isDirectory() ? "dir" : "file";
+          symlinkSync(src, dest, type);
         } catch {
           // ignore
         }

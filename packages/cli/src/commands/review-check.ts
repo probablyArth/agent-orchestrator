@@ -18,6 +18,9 @@ async function checkPRReviews(
   prNumber: string,
 ): Promise<{ pendingComments: number; reviewDecision: string | null }> {
   const [owner, name] = repo.split("/");
+  if (!owner || !name) {
+    return { pendingComments: 0, reviewDecision: null };
+  }
 
   // Use GraphQL with variable passing (-F) to avoid injection via repo names
   const query =

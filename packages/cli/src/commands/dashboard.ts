@@ -78,8 +78,10 @@ export function registerDashboard(program: Command): void {
         process.exit(1);
       });
 
+      let browserTimer: ReturnType<typeof setTimeout> | undefined;
+
       if (opts.open !== false) {
-        setTimeout(() => {
+        browserTimer = setTimeout(() => {
           const browser = spawn("open", [`http://localhost:${port}`], {
             stdio: "ignore",
           });
@@ -90,6 +92,7 @@ export function registerDashboard(program: Command): void {
       }
 
       child.on("exit", (code) => {
+        if (browserTimer) clearTimeout(browserTimer);
         process.exit(code ?? 0);
       });
     });
