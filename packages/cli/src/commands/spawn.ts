@@ -3,7 +3,7 @@ import { join } from "node:path";
 import chalk from "chalk";
 import ora from "ora";
 import type { Command } from "commander";
-import { loadConfig, buildPrompt, type OrchestratorConfig, type ProjectConfig } from "@agent-orchestrator/core";
+import { loadConfig, buildPrompt, tmuxSendKeys, type OrchestratorConfig, type ProjectConfig } from "@agent-orchestrator/core";
 import { exec, git, getTmuxSessions } from "../lib/shell.js";
 import { getSessionDir, writeMetadata, findSessionForIssue } from "../lib/metadata.js";
 import { banner } from "../lib/format.js";
@@ -186,9 +186,7 @@ async function spawnSession(
 
     if (composedPrompt) {
       await new Promise((resolve) => setTimeout(resolve, 1000));
-      await exec("tmux", ["send-keys", "-t", sessionName, "-l", composedPrompt]);
-      await new Promise((resolve) => setTimeout(resolve, 200));
-      await exec("tmux", ["send-keys", "-t", sessionName, "Enter"]);
+      await tmuxSendKeys(sessionName, composedPrompt);
     }
 
     // Open terminal tab if requested
