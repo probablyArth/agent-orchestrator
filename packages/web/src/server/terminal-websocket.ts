@@ -137,9 +137,14 @@ const server = createServer(async (req, res) => {
     // Wait for ttyd to be ready before returning the URL
     try {
       await waitForTtyd(instance.port, sessionId);
+
+      // Use the request host to construct the terminal URL (supports remote access)
+      const host = req.headers.host ?? "localhost";
+      const protocol = req.headers["x-forwarded-proto"] ?? "http";
+
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({
-        url: `http://localhost:${instance.port}/${sessionId}/`,
+        url: `${protocol}://${host.split(":")[0]}:${instance.port}/${sessionId}/`,
         port: instance.port,
         sessionId,
       }));
@@ -173,11 +178,21 @@ server.listen(PORT, () => {
 });
 
 // Graceful shutdown — kill all ttyd instances
-process.on("SIGINT", () => {
-  console.log("[Terminal] Shutting down...");
+function shutdown(signal: string) {
+  console.log(`[Terminal] Received ${signal}, shutting down...`);
   for (const [, instance] of instances) {
     instance.process.kill();
   }
-  server.close();
-  process.exit(0);
-});
+  server.close(() => {
+    console.log("[Terminal] Server closed");
+    process.exit(0);
+  });
+  // Force exit after 5s if graceful shutdown hangs
+  setTimeout(() => {
+    console.error("[Terminal] Forced shutdown after timeout");
+    process.exit(1);
+  }, 5000);
+}
+
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));

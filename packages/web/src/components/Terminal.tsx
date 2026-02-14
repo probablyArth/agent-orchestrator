@@ -19,7 +19,10 @@ export function Terminal({ sessionId }: TerminalProps) {
 
   useEffect(() => {
     const port = process.env.NEXT_PUBLIC_TERMINAL_PORT ?? "3001";
-    fetch(`http://localhost:${port}/terminal?session=${sessionId}`)
+    // Use current hostname instead of hardcoded localhost
+    const protocol = window.location.protocol;
+    const hostname = window.location.hostname;
+    fetch(`${protocol}//${hostname}:${port}/terminal?session=${sessionId}`)
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json() as Promise<{ url: string }>;
