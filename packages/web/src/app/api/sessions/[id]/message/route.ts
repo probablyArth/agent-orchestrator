@@ -22,7 +22,7 @@ export async function POST(
     let body: Record<string, unknown> | null;
     try {
       body = await request.json() as Record<string, unknown>;
-    } catch (err) {
+    } catch {
       return NextResponse.json(
         { error: "Invalid JSON in request body" },
         { status: 400 },
