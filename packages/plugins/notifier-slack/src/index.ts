@@ -92,7 +92,7 @@ function buildBlocks(event: OrchestratorEvent, actions?: NotifyAction[]): unknow
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, "_")
           .replace(/^_|_$/g, "");
-        const actionId = sanitized || `ao_action_${String(actions.indexOf(action))}`;
+        const actionId = sanitized || `action_${String(actions.indexOf(action))}`;
         return {
           type: "button",
           text: { type: "plain_text", text: action.label, emoji: true },
