@@ -9,11 +9,10 @@ export default async function Home() {
   let sessions: DashboardSession[] = [];
   try {
     const { config, registry, sessionManager } = await getServices();
-    const coreSessions = await sessionManager.list();
+    const allSessions = await sessionManager.list();
     // Filter out special orchestrator session - it's accessible via dedicated button
-    sessions = coreSessions
-      .filter((s) => s.id !== "orchestrator")
-      .map(sessionToDashboard);
+    const coreSessions = allSessions.filter((s) => s.id !== "orchestrator");
+    sessions = coreSessions.map(sessionToDashboard);
 
     // Enrich issue labels using tracker plugin (synchronous)
     coreSessions.forEach((core, i) => {
