@@ -111,7 +111,7 @@ update_metadata_key() {
 # Detect: gh pr create
 if [[ "$command" =~ ^gh[[:space:]]+pr[[:space:]]+create ]]; then
   # Extract PR URL from output
-  pr_url=$(echo "$output" | grep -Eo 'https://github\\.com/[^/]+/[^/]+/pull/[0-9]+' | head -1)
+  pr_url=$(echo "$output" | grep -Eo 'https://github[.]com/[^/]+/[^/]+/pull/[0-9]+' | head -1)
 
   if [[ -n "$pr_url" ]]; then
     update_metadata_key "pr" "$pr_url"
@@ -639,21 +639,31 @@ function createClaudeCodeAgent(): Agent {
       const hooks = (existingSettings["hooks"] as Record<string, unknown>) ?? {};
       const postToolUse = (hooks["PostToolUse"] as Array<unknown>) ?? [];
 
-      // Check if our hook is already configured
-      const hasMetadataHook = postToolUse.some((hook) => {
-        if (typeof hook !== "object" || hook === null || Array.isArray(hook)) return false;
+      // Check if our hook is already configured with the correct path
+      let hookIndex = -1;
+      let hookDefIndex = -1;
+      for (let i = 0; i < postToolUse.length; i++) {
+        const hook = postToolUse[i];
+        if (typeof hook !== "object" || hook === null || Array.isArray(hook)) continue;
         const h = hook as Record<string, unknown>;
         const hooksList = h["hooks"];
-        if (!Array.isArray(hooksList)) return false;
-        return hooksList.some((hDef) => {
-          if (typeof hDef !== "object" || hDef === null || Array.isArray(hDef)) return false;
+        if (!Array.isArray(hooksList)) continue;
+        for (let j = 0; j < hooksList.length; j++) {
+          const hDef = hooksList[j];
+          if (typeof hDef !== "object" || hDef === null || Array.isArray(hDef)) continue;
           const def = hDef as Record<string, unknown>;
-          return typeof def["command"] === "string" && def["command"].includes("metadata-updater.sh");
-        });
-      });
+          if (typeof def["command"] === "string" && def["command"].includes("metadata-updater.sh")) {
+            hookIndex = i;
+            hookDefIndex = j;
+            break;
+          }
+        }
+        if (hookIndex >= 0) break;
+      }
 
-      // Add our hook if not already present
-      if (!hasMetadataHook) {
+      // Add or update our hook to ensure it points to the current workspace
+      if (hookIndex === -1) {
+        // No metadata hook exists, add it
         postToolUse.push({
           matcher: "Bash",
           hooks: [
@@ -664,13 +674,18 @@ function createClaudeCodeAgent(): Agent {
             },
           ],
         });
-
-        hooks["PostToolUse"] = postToolUse;
-        existingSettings["hooks"] = hooks;
-
-        // Write updated settings
-        await writeFile(settingsPath, JSON.stringify(existingSettings, null, 2) + "\n", "utf-8");
+      } else {
+        // Hook exists, update the path to current workspace
+        const hook = postToolUse[hookIndex] as Record<string, unknown>;
+        const hooksList = hook["hooks"] as Array<Record<string, unknown>>;
+        hooksList[hookDefIndex]["command"] = hookScriptPath;
       }
+
+      hooks["PostToolUse"] = postToolUse;
+      existingSettings["hooks"] = hooks;
+
+      // Write updated settings
+      await writeFile(settingsPath, JSON.stringify(existingSettings, null, 2) + "\n", "utf-8");
     },
   };
 }
