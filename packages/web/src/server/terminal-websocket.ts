@@ -47,7 +47,6 @@ wss.on("connection", (ws, req) => {
   sessions.set(sessionId, session);
 
   let lastContent = "";
-  let pollInterval: NodeJS.Timeout;
 
   // Poll tmux capture-pane every 100ms for real-time updates
   const pollOutput = () => {
@@ -87,7 +86,7 @@ wss.on("connection", (ws, req) => {
   pollOutput();
 
   // Start polling - 100ms for lower latency
-  pollInterval = setInterval(pollOutput, 100);
+  const pollInterval = setInterval(pollOutput, 100);
 
   session.captureProcess = null; // Not using a persistent process anymore
 
