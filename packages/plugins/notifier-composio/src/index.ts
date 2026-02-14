@@ -209,8 +209,12 @@ export function create(config?: Record<string, unknown>): Notifier {
     const timeoutMs = 30_000;
     const timeoutSignal = AbortSignal.timeout(timeoutMs);
 
+    const actionPromise = composio.executeAction({ action, params });
+    // Prevent unhandled rejection if the timeout fires and actionPromise later rejects
+    actionPromise.catch(() => {});
+
     const result = await Promise.race([
-      composio.executeAction({ action, params }),
+      actionPromise,
       new Promise<never>((_, reject) => {
         timeoutSignal.addEventListener("abort", () => {
           reject(new Error(`[notifier-composio] Composio API call timed out after ${timeoutMs / 1000}s`));
