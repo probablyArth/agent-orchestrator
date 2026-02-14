@@ -62,6 +62,12 @@ function relativeTime(iso: string): string {
   return `${days}d ago`;
 }
 
+/** Extracts a short issue label from a URL. e.g. "https://linear.app/.../INT-1327" → "INT-1327" */
+function extractIssueLabel(issueUrl: string): string {
+  const parts = issueUrl.split("/");
+  return parts[parts.length - 1] || issueUrl;
+}
+
 /** Builds a GitHub branch URL from PR owner/repo/branch. */
 function buildGitHubBranchUrl(pr: DashboardPR): string {
   return `https://github.com/${pr.owner}/${pr.repo}/tree/${pr.branch}`;
@@ -167,9 +173,14 @@ export function SessionDetail({ session }: SessionDetailProps) {
             {session.issueId && (
               <>
                 <span className="text-[var(--color-text-muted)]">&middot;</span>
-                <span className="rounded-md bg-[var(--color-bg-tertiary)] px-2 py-0.5 text-[var(--color-text-secondary)]">
-                  {session.issueId}
-                </span>
+                <a
+                  href={session.issueId}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-md bg-[var(--color-bg-tertiary)] px-2 py-0.5 text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:no-underline"
+                >
+                  {extractIssueLabel(session.issueId)}
+                </a>
               </>
             )}
           </div>

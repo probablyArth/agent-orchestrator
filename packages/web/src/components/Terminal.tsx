@@ -1,8 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { Terminal as XTerm } from "@xterm/xterm";
-import { FitAddon } from "@xterm/addon-fit";
+import { useState, useEffect } from "react";
 import { cn } from "@/lib/cn";
 
 interface TerminalProps {
@@ -10,170 +8,29 @@ interface TerminalProps {
 }
 
 /**
- * Terminal embed using xterm.js.
- * Proper interactive terminal via WebSocket - type directly, real-time streaming.
+ * Terminal embed using ttyd (iframe).
+ * ttyd handles xterm.js, WebSocket, ANSI rendering, resize, input — everything.
+ * We just request a ttyd URL from our terminal server and embed it.
  */
 export function Terminal({ sessionId }: TerminalProps) {
   const [fullscreen, setFullscreen] = useState(false);
-  const [connected, setConnected] = useState(false);
-  const terminalRef = useRef<HTMLDivElement>(null);
-  const xtermRef = useRef<XTerm | null>(null);
-  const fitAddonRef = useRef<FitAddon | null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
+  const [terminalUrl, setTerminalUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  console.log(`[Terminal] Component mounted for session: ${sessionId}`);
-
-  // Initialize xterm.js
   useEffect(() => {
-    console.log("[Terminal] Initialize effect running");
-    if (!terminalRef.current) {
-      console.log("[Terminal] terminalRef not ready yet");
-      return;
-    }
-    console.log("[Terminal] Creating XTerm instance...");
-
-    // Create terminal instance
-    const term = new XTerm({
-      cursorBlink: false,
-      cursorStyle: "underline",
-      theme: {
-        background: "#000000",
-        foreground: "#d0d0d0",
-        cursor: "transparent", // Hide cursor - tmux output has its own
-      },
-      fontFamily: 'Menlo, Monaco, "Courier New", monospace',
-      fontSize: 12,
-      lineHeight: 1.4,
-      scrollback: 10000,
-      convertEol: true,
-      allowProposedApi: true,
-    });
-
-    const fitAddon = new FitAddon();
-    term.loadAddon(fitAddon);
-    term.open(terminalRef.current);
-
-    xtermRef.current = term;
-    fitAddonRef.current = fitAddon;
-
-    // Fit multiple times to ensure it happens after layout is ready
-    const doFit = () => {
-      try {
-        fitAddon.fit();
-        console.log(`[Terminal] Fitted to ${term.cols}x${term.rows}`);
-      } catch (err) {
-        console.warn("[Terminal] Fit failed:", err);
-      }
-    };
-
-    // Immediate fit
-    doFit();
-
-    // Retry fits with delays to catch layout changes
-    setTimeout(doFit, 100);
-    setTimeout(doFit, 250);
-    setTimeout(doFit, 500);
-
-    // Handle window resize
-    const handleResize = () => {
-      doFit();
-    };
-    window.addEventListener("resize", handleResize);
-
-    return () => {
-      window.removeEventListener("resize", handleResize);
-      term.dispose();
-      xtermRef.current = null;
-      fitAddonRef.current = null;
-    };
-  }, []);
-
-  // Refit terminal when fullscreen changes
-  useEffect(() => {
-    if (fitAddonRef.current) {
-      setTimeout(() => {
-        fitAddonRef.current?.fit();
-        // Send resize to server
-        const term = xtermRef.current;
-        const ws = wsRef.current;
-        if (term && ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(
-            JSON.stringify({
-              type: "resize",
-              cols: term.cols,
-              rows: term.rows,
-            }),
-          );
-        }
-      }, 150);
-    }
-  }, [fullscreen]);
-
-  // Connect to WebSocket for interactive terminal
-  useEffect(() => {
-    const term = xtermRef.current;
-    if (!term) {
-      console.log("[Terminal] XTerm not initialized, skipping WebSocket");
-      return;
-    }
-
-    // Connect to WebSocket server
-    const wsUrl = `ws://localhost:${process.env.NEXT_PUBLIC_WS_PORT ?? "3001"}?session=${sessionId}`;
-    console.log(`[Terminal] Connecting to WebSocket: ${wsUrl}`);
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
-
-    ws.addEventListener("open", () => {
-      setConnected(true);
-      console.log(`[Terminal] WebSocket connected, terminal size: ${term.cols}x${term.rows}`);
-
-      // Send initial terminal size to resize tmux pane
-      ws.send(
-        JSON.stringify({
-          type: "resize",
-          cols: term.cols,
-          rows: term.rows,
-        }),
-      );
-    });
-
-    ws.addEventListener("message", (event) => {
-      // Write output from server
-      term.write(event.data);
-    });
-
-    ws.addEventListener("error", (err) => {
-      console.error("[Terminal] WebSocket error:", err);
-      term.writeln("\r\n\r\n[Connection error]");
-      setConnected(false);
-    });
-
-    ws.addEventListener("close", () => {
-      console.log("[Terminal] WebSocket closed");
-      term.writeln("\r\n\r\n[Connection closed]");
-      setConnected(false);
-    });
-
-    // Handle keyboard input - send to server
-    const inputDisposable = term.onData((data) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "input", data }));
-      }
-    });
-
-    // Handle terminal resize - send to server
-    const resizeDisposable = term.onResize(({ cols, rows }) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "resize", cols, rows }));
-      }
-    });
-
-    return () => {
-      inputDisposable.dispose();
-      resizeDisposable.dispose();
-      ws.close();
-      wsRef.current = null;
-    };
+    const port = process.env.NEXT_PUBLIC_TERMINAL_PORT ?? "3001";
+    fetch(`http://localhost:${port}/terminal?session=${sessionId}`)
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json() as Promise<{ url: string }>;
+      })
+      .then((data) => {
+        setTerminalUrl(data.url);
+      })
+      .catch((err) => {
+        console.error("[Terminal] Failed to get terminal URL:", err);
+        setError("Failed to connect to terminal server");
+      });
   }, [sessionId]);
 
   return (
@@ -184,26 +41,26 @@ export function Terminal({ sessionId }: TerminalProps) {
       )}
     >
       <div className="flex items-center gap-2 border-b border-[var(--color-border-default)] bg-[var(--color-bg-tertiary)] px-3 py-2">
-        <div className="flex gap-1.5">
-          <div
-            className={cn(
-              "h-2.5 w-2.5 rounded-full transition-colors",
-              connected ? "bg-[#3fb950]" : "bg-[#f85149]",
-            )}
-          />
-          <div className="h-2.5 w-2.5 rounded-full bg-[#d29922]" />
-          <div className="h-2.5 w-2.5 rounded-full bg-[#484f58]" />
-        </div>
+        <div
+          className={cn(
+            "h-2 w-2 rounded-full",
+            terminalUrl ? "bg-[#3fb950]" : error ? "bg-[#f85149]" : "bg-[#d29922] animate-pulse",
+          )}
+        />
         <span className="font-[var(--font-mono)] text-xs text-[var(--color-text-muted)]">
           {sessionId}
         </span>
         <span
           className={cn(
             "text-[10px] font-medium uppercase tracking-wide",
-            connected ? "text-[var(--color-accent-green)]" : "text-[var(--color-text-muted)]",
+            terminalUrl
+              ? "text-[var(--color-accent-green)]"
+              : error
+                ? "text-[var(--color-accent-red)]"
+                : "text-[var(--color-text-muted)]",
           )}
         >
-          {connected ? "Interactive" : "Connecting..."}
+          {terminalUrl ? "Connected" : error ?? "Connecting..."}
         </span>
         <button
           onClick={() => setFullscreen(!fullscreen)}
@@ -212,13 +69,20 @@ export function Terminal({ sessionId }: TerminalProps) {
           {fullscreen ? "exit fullscreen" : "fullscreen"}
         </button>
       </div>
-      <div
-        ref={terminalRef}
-        className={cn(
-          "p-2 w-full",
-          fullscreen ? "h-[calc(100vh-40px)]" : "h-[600px]",
+      <div className={cn("w-full", fullscreen ? "h-[calc(100vh-40px)]" : "h-[600px]")}>
+        {terminalUrl ? (
+          <iframe
+            src={terminalUrl}
+            className="h-full w-full border-0"
+            title={`Terminal: ${sessionId}`}
+            allow="clipboard-read; clipboard-write"
+          />
+        ) : (
+          <div className="flex h-full items-center justify-center text-sm text-[var(--color-text-muted)]">
+            {error ?? "Connecting to terminal..."}
+          </div>
         )}
-      />
+      </div>
     </div>
   );
 }

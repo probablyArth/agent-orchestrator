@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import "@xterm/xterm/css/xterm.css";
 
 @theme {
   --color-bg-primary: #0d1117;
