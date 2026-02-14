@@ -5,25 +5,12 @@
  * Everything else runs for real: config parsing, tool slug routing, message formatting.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import type { OrchestratorEvent, NotifyAction } from "@agent-orchestrator/core";
+import type { NotifyAction } from "@agent-orchestrator/core";
 import composioPlugin from "@agent-orchestrator/plugin-notifier-composio";
+import { makeEvent } from "./helpers/event-factory.js";
 
 const mockExecuteAction = vi.fn().mockResolvedValue({ successful: true });
 const mockClient = { executeAction: mockExecuteAction };
-
-function makeEvent(overrides: Partial<OrchestratorEvent> = {}): OrchestratorEvent {
-  return {
-    id: "evt-int-1",
-    type: "ci.failing",
-    priority: "action",
-    sessionId: "backend-3",
-    projectId: "my-project",
-    timestamp: new Date("2025-06-15T12:00:00Z"),
-    message: "CI is failing on backend-3",
-    data: {},
-    ...overrides,
-  };
-}
 
 describe("notifier-composio integration", () => {
   const originalEnv = process.env.COMPOSIO_API_KEY;

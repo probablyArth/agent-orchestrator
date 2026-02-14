@@ -88,13 +88,15 @@ function buildBlocks(event: OrchestratorEvent, actions?: NotifyAction[]): unknow
             url: action.url,
           };
         }
+        const sanitized = action.label
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "_")
+          .replace(/^_|_$/g, "");
+        const actionId = sanitized || `ao_action_${String(actions.indexOf(action))}`;
         return {
           type: "button",
           text: { type: "plain_text", text: action.label, emoji: true },
-          action_id: `ao_${action.label
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, "_")
-            .replace(/^_|_$/g, "")}`,
+          action_id: `ao_${actionId}`,
           value: action.callbackEndpoint,
         };
       });

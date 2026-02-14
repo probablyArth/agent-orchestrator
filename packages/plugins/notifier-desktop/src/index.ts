@@ -1,11 +1,12 @@
 import { execFile } from "node:child_process";
 import { platform } from "node:os";
-import type {
-  PluginModule,
-  Notifier,
-  OrchestratorEvent,
-  NotifyAction,
-  EventPriority,
+import {
+  escapeAppleScript,
+  type PluginModule,
+  type Notifier,
+  type OrchestratorEvent,
+  type NotifyAction,
+  type EventPriority,
 } from "@agent-orchestrator/core";
 
 export const manifest = {
@@ -15,13 +16,8 @@ export const manifest = {
   version: "0.1.0",
 };
 
-/**
- * Escape a string for safe interpolation inside AppleScript double-quoted strings.
- * Handles backslashes and double quotes which would otherwise break or inject.
- */
-export function escapeAppleScript(s: string): string {
-  return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-}
+// Re-export for backwards compatibility
+export { escapeAppleScript } from "@agent-orchestrator/core";
 
 /**
  * Map event priority to notification urgency:

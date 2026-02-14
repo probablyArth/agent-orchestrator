@@ -72,7 +72,7 @@ describe("terminal-web", () => {
       const terminal = create();
       await terminal.openSession(makeSession());
 
-      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("http://localhost:9847"));
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("http://localhost:3000"));
     });
 
     it("uses custom dashboard URL", async () => {

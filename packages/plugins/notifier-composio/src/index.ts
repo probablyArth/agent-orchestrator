@@ -112,11 +112,13 @@ function buildToolArgs(
 
   if (app === "discord") {
     const args: Record<string, unknown> = { content: text };
+    // Discord requires numeric channel IDs — channelName is not supported
     if (channelId) args.channel_id = channelId;
+    else if (channelName) args.channel_id = channelName;
     return args;
   }
 
-  // gmail
+  // gmail — emailTo is required, validated at config time
   return {
     to: emailTo ?? "",
     subject: "Agent Orchestrator Notification",
@@ -150,6 +152,12 @@ export function create(config?: Record<string, unknown>): Notifier {
     );
   }
 
+  if (defaultApp === "gmail" && !emailTo) {
+    throw new Error(
+      "[notifier-composio] emailTo is required when defaultApp is \"gmail\"",
+    );
+  }
+
   let client: ComposioToolkit | null | undefined = clientOverride;
   let warnedNoKey = false;
   let sdkMissing = false;
@@ -174,9 +182,11 @@ export function create(config?: Record<string, unknown>): Notifier {
       client = await loadComposioSDK(apiKey);
       if (client === null) {
         sdkMissing = true;
-        throw new Error(
-          "[notifier-composio] composio-core package is not installed. Run: npm install composio-core",
+        // eslint-disable-next-line no-console
+        console.warn(
+          "[notifier-composio] composio-core package is not installed — notifications will be no-ops. Run: npm install composio-core",
         );
+        return null;
       }
     }
 
@@ -188,26 +198,22 @@ export function create(config?: Record<string, unknown>): Notifier {
     action: string,
     params: Record<string, unknown>,
   ): Promise<void> {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30_000);
+    const timeoutMs = 30_000;
+    const timeoutSignal = AbortSignal.timeout(timeoutMs);
 
-    try {
-      const result = await Promise.race([
-        composio.executeAction({ action, params }),
-        new Promise<never>((_, reject) => {
-          controller.signal.addEventListener("abort", () => {
-            reject(new Error("[notifier-composio] Composio API call timed out after 30s"));
-          });
-        }),
-      ]);
+    const result = await Promise.race([
+      composio.executeAction({ action, params }),
+      new Promise<never>((_, reject) => {
+        timeoutSignal.addEventListener("abort", () => {
+          reject(new Error(`[notifier-composio] Composio API call timed out after ${timeoutMs / 1000}s`));
+        }, { once: true });
+      }),
+    ]);
 
-      if (!result.successful) {
-        throw new Error(
-          `[notifier-composio] Composio action ${action} failed: ${result.error ?? "unknown error"}`,
-        );
-      }
-    } finally {
-      clearTimeout(timeout);
+    if (!result.successful) {
+      throw new Error(
+        `[notifier-composio] Composio action ${action} failed: ${result.error ?? "unknown error"}`,
+      );
     }
   }
 

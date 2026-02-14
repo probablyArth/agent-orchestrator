@@ -1,6 +1,11 @@
 import { execFile } from "node:child_process";
 import { platform } from "node:os";
-import type { PluginModule, Terminal, Session } from "@agent-orchestrator/core";
+import {
+  escapeAppleScript,
+  type PluginModule,
+  type Terminal,
+  type Session,
+} from "@agent-orchestrator/core";
 
 export const manifest = {
   name: "iterm2",
@@ -9,13 +14,8 @@ export const manifest = {
   version: "0.1.0",
 };
 
-/**
- * Escape a string for safe interpolation inside AppleScript double-quoted strings.
- * Handles backslashes and double quotes which would otherwise break or inject.
- */
-export function escapeAppleScript(s: string): string {
-  return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-}
+// Re-export for backwards compatibility
+export { escapeAppleScript } from "@agent-orchestrator/core";
 
 /**
  * Run an AppleScript snippet and return stdout.
@@ -93,19 +93,27 @@ end tell`;
 
 /**
  * Open a new iTerm2 tab and attach to the given tmux session.
+ * Creates a new window if no window is open.
  */
 async function openNewTab(sessionName: string): Promise<void> {
   const safe = escapeAppleScript(sessionName);
+  // Double-escape for the write text command: shell-escape first, then AppleScript-escape
+  // the whole shell command so it's safe inside the AppleScript double-quoted string.
   const shellSafe = shellEscape(sessionName);
+  const shellInAppleScript = escapeAppleScript(shellSafe);
   const script = `
 tell application "iTerm2"
     activate
-    tell current window
-        create tab with default profile
-        tell current session
-            set name to "${safe}"
-            write text "printf '\\\\033]0;${shellSafe}\\\\007' && tmux attach -t '${shellSafe}'"
+    if (count of windows) is 0 then
+        create window with default profile
+    else
+        tell current window
+            create tab with default profile
         end tell
+    end if
+    tell current session of current window
+        set name to "${safe}"
+        write text "printf '\\\\033]0;${shellInAppleScript}\\\\007' && tmux attach -t '${shellInAppleScript}'"
     end tell
 end tell`;
 

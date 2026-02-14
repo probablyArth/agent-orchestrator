@@ -5,22 +5,9 @@
  * Everything else runs for real: config parsing, retry logic, payload serialization.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import type { OrchestratorEvent, NotifyAction } from "@agent-orchestrator/core";
+import type { NotifyAction } from "@agent-orchestrator/core";
 import webhookPlugin from "@agent-orchestrator/plugin-notifier-webhook";
-
-function makeEvent(overrides: Partial<OrchestratorEvent> = {}): OrchestratorEvent {
-  return {
-    id: "evt-int-1",
-    type: "ci.failing",
-    priority: "action",
-    sessionId: "app-1",
-    projectId: "my-project",
-    timestamp: new Date("2025-06-15T12:00:00Z"),
-    message: "CI check failed",
-    data: { checkName: "lint" },
-    ...overrides,
-  };
-}
+import { makeEvent } from "./helpers/event-factory.js";
 
 describe("notifier-webhook integration", () => {
   beforeEach(() => {
@@ -39,11 +26,17 @@ describe("notifier-webhook integration", () => {
       vi.stubGlobal("fetch", fetchMock);
 
       const notifier = webhookPlugin.create({ url: "https://example.com/hook" });
-      await notifier.notify(makeEvent());
+      const event = makeEvent({
+        type: "ci.failing",
+        priority: "action",
+        message: "CI check failed",
+        data: { checkName: "lint" },
+      });
+      await notifier.notify(event);
 
       const body = JSON.parse(fetchMock.mock.calls[0][1].body);
       expect(body.type).toBe("notification");
-      expect(body.event.id).toBe("evt-int-1");
+      expect(body.event.id).toBe("evt-test-1");
       expect(body.event.type).toBe("ci.failing");
       expect(body.event.priority).toBe("action");
       expect(body.event.sessionId).toBe("app-1");

@@ -5,8 +5,6 @@
  * Everything else runs for real: AppleScript generation, escaping chains, tab reuse logic.
  */
 import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
-import type { Session } from "@agent-orchestrator/core";
-
 vi.mock("node:child_process", () => ({
   execFile: vi.fn(),
 }));
@@ -22,25 +20,7 @@ const mockExecFile = execFile as unknown as Mock;
 const mockPlatform = platform as unknown as Mock;
 
 import iterm2Plugin from "@agent-orchestrator/plugin-terminal-iterm2";
-
-function makeSession(overrides: Partial<Session> = {}): Session {
-  return {
-    id: "app-1",
-    projectId: "my-project",
-    status: "working",
-    activity: "active",
-    branch: "feat/test",
-    issueId: null,
-    pr: null,
-    workspacePath: "/tmp/workspace",
-    runtimeHandle: null,
-    agentInfo: null,
-    createdAt: new Date("2025-06-15T12:00:00Z"),
-    lastActivityAt: new Date("2025-06-15T12:00:00Z"),
-    metadata: {},
-    ...overrides,
-  };
-}
+import { makeSession } from "./helpers/event-factory.js";
 
 function simulateOsascript(stdout: string) {
   mockExecFile.mockImplementation(
@@ -85,8 +65,9 @@ describe("terminal-iterm2 integration", () => {
       const openScript = mockExecFile.mock.calls[1][1][1] as string;
       // AppleScript escaping in set name
       expect(openScript).toContain('set name to "it\'s-a-\\"test\\"\\\\session"');
-      // Shell escaping in tmux command: ' -> '\''
-      expect(openScript).toContain("tmux attach -t 'it'\\''s-a-\"test\"\\session'");
+      // Shell escaping then AppleScript escaping in tmux command:
+      // Shell: 'it'\''s-a-"test"\session' -> AppleScript doubles backslashes
+      expect(openScript).toContain("tmux attach -t 'it'\\\\''s-a-\\\"test\\\"\\\\session'");
     });
   });
 

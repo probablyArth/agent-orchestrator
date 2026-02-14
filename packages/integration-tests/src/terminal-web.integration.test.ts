@@ -5,27 +5,8 @@
  * Tests verify state tracking, URL construction, and log output.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { Session } from "@agent-orchestrator/core";
 import webPlugin from "@agent-orchestrator/plugin-terminal-web";
-
-function makeSession(overrides: Partial<Session> = {}): Session {
-  return {
-    id: "app-1",
-    projectId: "my-project",
-    status: "working",
-    activity: "active",
-    branch: "feat/test",
-    issueId: null,
-    pr: null,
-    workspacePath: "/tmp/workspace",
-    runtimeHandle: null,
-    agentInfo: null,
-    createdAt: new Date("2025-06-15T12:00:00Z"),
-    lastActivityAt: new Date("2025-06-15T12:00:00Z"),
-    metadata: {},
-    ...overrides,
-  };
-}
+import { makeSession } from "./helpers/event-factory.js";
 
 describe("terminal-web integration", () => {
   beforeEach(() => {
@@ -75,13 +56,13 @@ describe("terminal-web integration", () => {
   });
 
   describe("URL construction", () => {
-    it("default dashboard URL uses port 9847", async () => {
+    it("default dashboard URL uses port 3000", async () => {
       const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
       const terminal = webPlugin.create();
       await terminal.openSession(makeSession({ id: "url-test" }));
 
       expect(logSpy).toHaveBeenCalledWith(
-        expect.stringContaining("http://localhost:9847/sessions/url-test/terminal"),
+        expect.stringContaining("http://localhost:3000/sessions/url-test/terminal"),
       );
     });
 

@@ -79,8 +79,14 @@ describe("notifier-composio", () => {
       expect(() => create({ composioApiKey: "k", defaultApp: "discord" })).not.toThrow();
     });
 
-    it("accepts gmail as defaultApp", () => {
-      expect(() => create({ composioApiKey: "k", defaultApp: "gmail" })).not.toThrow();
+    it("accepts gmail as defaultApp with emailTo", () => {
+      expect(() => create({ composioApiKey: "k", defaultApp: "gmail", emailTo: "a@b.com" })).not.toThrow();
+    });
+
+    it("throws when gmail is defaultApp without emailTo", () => {
+      expect(() => create({ composioApiKey: "k", defaultApp: "gmail" })).toThrow(
+        "emailTo is required",
+      );
     });
 
     it("defaults to slack when defaultApp not specified", async () => {

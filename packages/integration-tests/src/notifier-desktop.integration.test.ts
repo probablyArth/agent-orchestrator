@@ -5,7 +5,8 @@
  * Everything else runs for real: config parsing, escaping chains, formatting.
  */
 import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
-import type { OrchestratorEvent, NotifyAction } from "@agent-orchestrator/core";
+import type { NotifyAction } from "@agent-orchestrator/core";
+import { makeEvent } from "./helpers/event-factory.js";
 
 vi.mock("node:child_process", () => ({
   execFile: vi.fn(),
@@ -23,20 +24,6 @@ const mockPlatform = platform as unknown as Mock;
 
 // Import the full plugin module — config parsing, escaping, formatting all run for real
 import desktopPlugin from "@agent-orchestrator/plugin-notifier-desktop";
-
-function makeEvent(overrides: Partial<OrchestratorEvent> = {}): OrchestratorEvent {
-  return {
-    id: "evt-int-1",
-    type: "session.spawned",
-    priority: "info",
-    sessionId: "app-1",
-    projectId: "my-project",
-    timestamp: new Date("2025-06-15T12:00:00Z"),
-    message: "Session app-1 spawned",
-    data: {},
-    ...overrides,
-  };
-}
 
 describe("notifier-desktop integration", () => {
   beforeEach(() => {

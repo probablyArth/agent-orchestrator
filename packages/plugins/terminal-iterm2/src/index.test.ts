@@ -182,8 +182,9 @@ describe("terminal-iterm2", () => {
       await terminal.openSession(makeSession({ id: "it's-a-test" }));
 
       const openScript = mockExecFile.mock.calls[1][1][1] as string;
-      // Single quotes in the session name should be escaped for shell safety
-      expect(openScript).toContain("tmux attach -t 'it'\\''s-a-test'");
+      // Single quotes in the session name should be shell-escaped then AppleScript-escaped.
+      // Shell escape: 'it'\''s-a-test'  →  AppleScript escape doubles the backslash: 'it'\\''s-a-test'
+      expect(openScript).toContain("tmux attach -t 'it'\\\\''s-a-test'");
     });
 
     it("always calls osascript as the command", async () => {

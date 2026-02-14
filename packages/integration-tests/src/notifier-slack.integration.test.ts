@@ -5,22 +5,9 @@
  * Everything else runs for real: config parsing, Block Kit construction, channel routing.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import type { OrchestratorEvent, NotifyAction, EventPriority } from "@agent-orchestrator/core";
+import type { NotifyAction, EventPriority } from "@agent-orchestrator/core";
 import slackPlugin from "@agent-orchestrator/plugin-notifier-slack";
-
-function makeEvent(overrides: Partial<OrchestratorEvent> = {}): OrchestratorEvent {
-  return {
-    id: "evt-int-1",
-    type: "session.spawned",
-    priority: "info",
-    sessionId: "app-1",
-    projectId: "my-project",
-    timestamp: new Date("2025-06-15T12:00:00Z"),
-    message: "Session app-1 spawned",
-    data: {},
-    ...overrides,
-  };
-}
+import { makeEvent } from "./helpers/event-factory.js";
 
 function mockFetchOk() {
   return vi.fn().mockResolvedValue({
