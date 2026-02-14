@@ -5,7 +5,7 @@
  * Provides bidirectional streaming for tmux sessions.
  */
 
-import { WebSocketServer, type WebSocket } from "ws";
+import { WebSocketServer, WebSocket } from "ws";
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer } from "node:http";
 
