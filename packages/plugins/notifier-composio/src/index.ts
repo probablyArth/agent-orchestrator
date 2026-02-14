@@ -64,7 +64,13 @@ async function loadComposioSDK(
     return client as ComposioToolkit;
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    if (message.includes("Cannot find module") || message.includes("MODULE_NOT_FOUND")) {
+    const code = err instanceof Error ? (err as NodeJS.ErrnoException).code : undefined;
+    if (
+      message.includes("Cannot find module") ||
+      message.includes("Cannot find package") ||
+      message.includes("MODULE_NOT_FOUND") ||
+      code === "ERR_MODULE_NOT_FOUND"
+    ) {
       return null;
     }
     throw err;
