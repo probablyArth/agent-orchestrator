@@ -205,7 +205,8 @@ function createGitHubTracker(): Tracker {
       update: IssueUpdate,
       project: ProjectConfig,
     ): Promise<void> {
-      // Handle state change
+      // Handle state change — GitHub Issues only supports open/closed.
+      // "in_progress" is not a GitHub state, so it is intentionally a no-op.
       if (update.state === "closed") {
         await gh([
           "issue",
