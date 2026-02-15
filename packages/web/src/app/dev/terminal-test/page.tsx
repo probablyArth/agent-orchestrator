@@ -34,7 +34,11 @@ function TerminalTestPageContent() {
       .then((res) => res.json())
       .then((data) => {
         if (data.sessions && Array.isArray(data.sessions)) {
-          const ids = data.sessions.map((s: { id: string }) => s.id);
+          // Filter out terminated/exited sessions - only use active ones
+          const activeSessions = data.sessions.filter(
+            (s: { activity: string }) => s.activity !== "exited",
+          );
+          const ids = activeSessions.map((s: { id: string }) => s.id);
           setAvailableSessions(ids);
         }
       })
