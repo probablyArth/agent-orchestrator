@@ -18,13 +18,12 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
       return NextResponse.json({ error: "PR not found" }, { status: 404 });
     }
 
-    // Get project config — fall back to single project if projectId is missing
-    let project = config.projects[session.projectId];
+    const project = config.projects[session.projectId];
     if (!project) {
-      const projectIds = Object.keys(config.projects);
-      if (projectIds.length === 1) {
-        project = config.projects[projectIds[0]];
-      }
+      return NextResponse.json(
+        { error: `Invalid project reference: "${session.projectId}"` },
+        { status: 500 },
+      );
     }
 
     const scm = getSCM(registry, project);

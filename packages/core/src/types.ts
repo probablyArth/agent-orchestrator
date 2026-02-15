@@ -853,16 +853,15 @@ export interface PluginModule<T = unknown> {
 
 /**
  * Session metadata stored as flat key=value files.
- * Matches the existing bash script format for backwards compatibility.
  */
 export interface SessionMetadata {
+  project: string;
   worktree: string;
   branch: string;
   status: string;
   issue?: string;
   pr?: string;
   summary?: string;
-  project?: string;
   createdAt?: string;
   runtimeHandle?: string;
 }

@@ -98,43 +98,16 @@ function validateStatus(raw: string | undefined): SessionStatus {
   return "spawning";
 }
 
-/**
- * Infer projectId from session ID by matching against project sessionPrefix values.
- * Uses strict pattern matching: sessionId must be exactly "prefix-DIGITS" (e.g., "ao-18").
- * Prefers the longest matching prefix to handle overlapping prefixes correctly.
- * Returns the matching project ID, or empty string if no match.
- *
- * Non-standard session names (e.g., "ao-orchestrator") should have the project field
- * set explicitly in metadata rather than relying on inference.
- */
-function inferProjectId(sessionId: SessionId, config: OrchestratorConfig): string {
-  let longestMatch: { projectId: string; prefixLength: number } | null = null;
-
-  for (const [projectId, project] of Object.entries(config.projects)) {
-    const prefix = project.sessionPrefix;
-    // Strict pattern: must be "prefix-DIGITS" (e.g., "ao-18", not "ao-abc" or "ao-1-extra")
-    const pattern = new RegExp(`^${escapeRegex(prefix)}-\\d+$`);
-    if (pattern.test(sessionId)) {
-      if (!longestMatch || prefix.length > longestMatch.prefixLength) {
-        longestMatch = { projectId, prefixLength: prefix.length };
-      }
-    }
-  }
-
-  return longestMatch?.projectId ?? "";
-}
-
 /** Reconstruct a Session object from raw metadata key=value pairs. */
 function metadataToSession(
   sessionId: SessionId,
   meta: Record<string, string>,
-  config: OrchestratorConfig,
   createdAt?: Date,
   modifiedAt?: Date,
 ): Session {
   return {
     id: sessionId,
-    projectId: meta["project"] || inferProjectId(sessionId, config),
+    projectId: meta["project"],
     status: validateStatus(meta["status"]),
     activity: "idle",
     branch: meta["branch"] || null,
@@ -466,10 +439,10 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
         // If stat fails, timestamps will fall back to current time
       }
 
-      const session = metadataToSession(sid, raw, config, createdAt, modifiedAt);
+      // Filter by project if specified (before building session object - more efficient)
+      if (projectId && raw["project"] !== projectId) continue;
 
-      // Filter by project if specified (after inference runs)
-      if (projectId && session.projectId !== projectId) continue;
+      const session = metadataToSession(sid, raw, createdAt, modifiedAt);
 
       // Enrich with live runtime state and activity detection
       if (session.runtimeHandle) {
@@ -502,7 +475,7 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
       // If stat fails, timestamps will fall back to current time
     }
 
-    const session = metadataToSession(sessionId, raw, config, createdAt, modifiedAt);
+    const session = metadataToSession(sessionId, raw, createdAt, modifiedAt);
 
     // Enrich with live runtime state and activity detection
     if (session.runtimeHandle) {

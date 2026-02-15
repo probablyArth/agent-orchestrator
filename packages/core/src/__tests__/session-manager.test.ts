@@ -175,8 +175,8 @@ describe("spawn", () => {
     const sm = createSessionManager({ config, registry: mockRegistry });
 
     // Pre-create some metadata to simulate existing sessions
-    writeMetadata(dataDir, "app-3", { worktree: "/tmp", branch: "b", status: "working" });
-    writeMetadata(dataDir, "app-7", { worktree: "/tmp", branch: "b", status: "working" });
+    writeMetadata(dataDir, "app-3", { project: "my-app", worktree: "/tmp", branch: "b", status: "working" });
+    writeMetadata(dataDir, "app-7", { project: "my-app", worktree: "/tmp", branch: "b", status: "working" });
 
     const session = await sm.spawn({ projectId: "my-app" });
     expect(session.id).toBe("app-8");

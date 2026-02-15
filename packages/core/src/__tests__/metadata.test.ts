@@ -26,6 +26,7 @@ afterEach(() => {
 describe("writeMetadata + readMetadata", () => {
   it("writes and reads basic metadata", () => {
     writeMetadata(dataDir, "app-1", {
+      project: "test-project",
       worktree: "/tmp/worktree",
       branch: "feat/test",
       status: "working",
@@ -40,13 +41,13 @@ describe("writeMetadata + readMetadata", () => {
 
   it("writes and reads optional fields", () => {
     writeMetadata(dataDir, "app-2", {
+      project: "my-app",
       worktree: "/tmp/w",
       branch: "main",
       status: "pr_open",
       issue: "https://linear.app/team/issue/INT-100",
       pr: "https://github.com/org/repo/pull/42",
       summary: "Implementing feature X",
-      project: "my-app",
       createdAt: "2025-01-01T00:00:00.000Z",
       runtimeHandle: '{"id":"tmux-1","runtimeName":"tmux"}',
     });
@@ -68,6 +69,7 @@ describe("writeMetadata + readMetadata", () => {
 
   it("produces key=value format matching bash scripts", () => {
     writeMetadata(dataDir, "app-3", {
+      project: "test-project",
       worktree: "/tmp/w",
       branch: "feat/INT-123",
       status: "working",
@@ -83,6 +85,7 @@ describe("writeMetadata + readMetadata", () => {
 
   it("omits optional fields that are undefined", () => {
     writeMetadata(dataDir, "app-4", {
+      project: "test-project",
       worktree: "/tmp/w",
       branch: "main",
       status: "spawning",
@@ -139,6 +142,7 @@ describe("readMetadataRaw", () => {
 describe("updateMetadata", () => {
   it("updates specific fields while preserving others", () => {
     writeMetadata(dataDir, "upd-1", {
+      project: "test-project",
       worktree: "/tmp/w",
       branch: "main",
       status: "spawning",
@@ -158,6 +162,7 @@ describe("updateMetadata", () => {
 
   it("deletes keys set to empty string", () => {
     writeMetadata(dataDir, "upd-2", {
+      project: "test-project",
       worktree: "/tmp/w",
       branch: "main",
       status: "working",
@@ -180,6 +185,7 @@ describe("updateMetadata", () => {
 
   it("ignores undefined values", () => {
     writeMetadata(dataDir, "upd-4", {
+      project: "test-project",
       worktree: "/tmp/w",
       branch: "main",
       status: "working",
@@ -196,6 +202,7 @@ describe("updateMetadata", () => {
 describe("deleteMetadata", () => {
   it("deletes metadata file and archives it", () => {
     writeMetadata(dataDir, "del-1", {
+      project: "test-project",
       worktree: "/tmp/w",
       branch: "main",
       status: "working",
@@ -213,6 +220,7 @@ describe("deleteMetadata", () => {
 
   it("deletes without archiving when archive=false", () => {
     writeMetadata(dataDir, "del-2", {
+      project: "test-project",
       worktree: "/tmp/w",
       branch: "main",
       status: "working",
@@ -231,9 +239,9 @@ describe("deleteMetadata", () => {
 
 describe("listMetadata", () => {
   it("lists all session IDs", () => {
-    writeMetadata(dataDir, "app-1", { worktree: "/tmp", branch: "a", status: "s" });
-    writeMetadata(dataDir, "app-2", { worktree: "/tmp", branch: "b", status: "s" });
-    writeMetadata(dataDir, "app-3", { worktree: "/tmp", branch: "c", status: "s" });
+    writeMetadata(dataDir, "app-1", { project: "test", worktree: "/tmp", branch: "a", status: "s" });
+    writeMetadata(dataDir, "app-2", { project: "test", worktree: "/tmp", branch: "b", status: "s" });
+    writeMetadata(dataDir, "app-3", { project: "test", worktree: "/tmp", branch: "c", status: "s" });
 
     const list = listMetadata(dataDir);
     expect(list).toHaveLength(3);
@@ -241,7 +249,7 @@ describe("listMetadata", () => {
   });
 
   it("excludes archive directory and dotfiles", () => {
-    writeMetadata(dataDir, "app-1", { worktree: "/tmp", branch: "a", status: "s" });
+    writeMetadata(dataDir, "app-1", { project: "test", worktree: "/tmp", branch: "a", status: "s" });
     mkdirSync(join(dataDir, "archive"), { recursive: true });
     writeFileSync(join(dataDir, ".hidden"), "x", "utf-8");
 
