@@ -2,6 +2,10 @@
 
 import { DirectTerminal } from "@/components/DirectTerminal";
 import { useSearchParams } from "next/navigation";
+import { Suspense } from "react";
+
+// Force dynamic rendering (required for useSearchParams)
+export const dynamic = "force-dynamic";
 
 /**
  * Test page for DirectTerminal with XDA clipboard support.
@@ -15,7 +19,7 @@ import { useSearchParams } from "next/navigation";
  * which should enable clipboard (OSC 52) in tmux without
  * requiring iTerm2 attachment.
  */
-export default function TestDirectPage() {
+function TestDirectPageContent() {
   const searchParams = useSearchParams();
   const startFullscreen = searchParams.get("fullscreen") === "true";
   const sessionId = searchParams.get("session") || "ao-orchestrator";
@@ -68,5 +72,13 @@ export default function TestDirectPage() {
         />
       </div>
     </div>
+  );
+}
+
+export default function TestDirectPage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center">Loading...</div>}>
+      <TestDirectPageContent />
+    </Suspense>
   );
 }

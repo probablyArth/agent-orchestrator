@@ -3,7 +3,10 @@
 import { DirectTerminal } from "@/components/DirectTerminal";
 import { Terminal } from "@/components/Terminal";
 import { useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useState, Suspense } from "react";
+
+// Force dynamic rendering (required for useSearchParams)
+export const dynamic = "force-dynamic";
 
 /**
  * Terminal Implementation Test & Documentation
@@ -18,7 +21,7 @@ import { useState } from "react";
  *
  * Note: Using different sessions for old/new avoids port conflicts when both render simultaneously.
  */
-export default function TerminalTestPage() {
+function TerminalTestPageContent() {
   const searchParams = useSearchParams();
   const sessionId = searchParams.get("session") || "ao-orchestrator";
   // Allow overriding individual sessions, otherwise both use the same session
@@ -491,5 +494,13 @@ export default function TerminalTestPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function TerminalTestPage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center">Loading...</div>}>
+      <TerminalTestPageContent />
+    </Suspense>
   );
 }
