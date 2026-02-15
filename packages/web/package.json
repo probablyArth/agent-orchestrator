@@ -7,8 +7,8 @@
   "scripts": {
     "dev": "concurrently \"npm:dev:next\" \"npm:dev:terminal\" \"npm:dev:direct-terminal\"",
     "dev:next": "next dev",
-    "dev:terminal": "tsx watch src/server/terminal-websocket.ts",
-    "dev:direct-terminal": "tsx watch src/server/direct-terminal-ws.ts",
+    "dev:terminal": "tsx watch server/terminal-websocket.ts",
+    "dev:direct-terminal": "tsx watch server/direct-terminal-ws.ts",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
