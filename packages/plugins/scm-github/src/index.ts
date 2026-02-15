@@ -563,6 +563,7 @@ function createGitHubSCM(): SCM {
 
     async branchExists(repoPath: string, branch: string): Promise<boolean> {
       try {
+        // Check local refs first
         const { stdout } = await execFileAsync(
           "git",
           ["-C", repoPath, "show-ref", "--verify", `refs/heads/${branch}`],
@@ -570,8 +571,17 @@ function createGitHubSCM(): SCM {
         );
         return stdout.trim().length > 0;
       } catch {
-        // show-ref exits with status 1 if ref doesn't exist
-        return false;
+        // If local ref doesn't exist, check remote refs (for clone workspaces)
+        try {
+          const { stdout } = await execFileAsync(
+            "git",
+            ["-C", repoPath, "show-ref", `refs/remotes/origin/${branch}`],
+            { timeout: 10_000 },
+          );
+          return stdout.trim().length > 0;
+        } catch {
+          return false;
+        }
       }
     },
   };

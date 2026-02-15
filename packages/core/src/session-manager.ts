@@ -763,7 +763,6 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
         status: "working",
         runtimeHandle: JSON.stringify(runtimeHandle),
         restoredAt: now,
-        lastActivity: now,
       });
 
       // 7. Run post-launch setup (hooks, settings, etc.)
