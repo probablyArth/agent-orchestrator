@@ -689,6 +689,7 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
 
     // 3. Ensure workspace exists
     const workspaceExists = await plugins.workspace.exists(workspacePath);
+    let workspaceWasRecreated = false;
 
     if (!workspaceExists) {
       // Check if branch still exists in repo (if SCM plugin available)
@@ -704,6 +705,7 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
       // Recreate worktree on same branch and run post-create hooks
       try {
         await plugins.workspace.restore(workspacePath, project.path, branch);
+        workspaceWasRecreated = true;
 
         // Run post-create hooks (symlinks, npm install, etc.)
         if (plugins.workspace.postCreate) {
@@ -779,16 +781,29 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
       issueId: metadata["issue"],
     });
 
-    const runtimeHandle = await plugins.runtime.create({
-      sessionId,
-      workspacePath,
-      launchCommand,
-      environment: {
-        ...environment,
-        AO_SESSION: sessionId,
-        AO_DATA_DIR: config.dataDir,
-      },
-    });
+    let runtimeHandle: RuntimeHandle;
+    try {
+      runtimeHandle = await plugins.runtime.create({
+        sessionId,
+        workspacePath,
+        launchCommand,
+        environment: {
+          ...environment,
+          AO_SESSION: sessionId,
+          AO_DATA_DIR: config.dataDir,
+        },
+      });
+    } catch (err) {
+      // Clean up recreated workspace on runtime creation failure
+      if (workspaceWasRecreated && workspacePath !== project.path) {
+        try {
+          await plugins.workspace.destroy(workspacePath);
+        } catch {
+          /* best effort */
+        }
+      }
+      throw err;
+    }
 
     try {
       // 6. Update metadata with new runtime handle (before postLaunchSetup)
@@ -812,6 +827,14 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
         await plugins.runtime.destroy(runtimeHandle);
       } catch {
         /* best effort */
+      }
+      // Clean up recreated workspace on post-launch failure
+      if (workspaceWasRecreated && workspacePath !== project.path) {
+        try {
+          await plugins.workspace.destroy(workspacePath);
+        } catch {
+          /* best effort */
+        }
       }
       // Revert metadata to terminated state (clear restoredAt to avoid misleading state)
       try {
