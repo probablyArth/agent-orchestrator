@@ -702,6 +702,19 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
 
       // Recreate worktree on same branch
       await plugins.workspace.restore(workspacePath, project.path, branch);
+
+      // Run post-create hooks (symlinks, npm install, etc.)
+      if (plugins.workspace.postCreate) {
+        await plugins.workspace.postCreate(
+          {
+            path: workspacePath,
+            branch,
+            sessionId,
+            projectId: projectId,
+          },
+          project,
+        );
+      }
     }
 
     // 4. Get launch command (restore or regular)
@@ -766,11 +779,12 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
       } catch {
         /* best effort */
       }
-      // Revert metadata to terminated state
+      // Revert metadata to terminated state (clear restoredAt to avoid misleading state)
       try {
         updateMetadata(config.dataDir, sessionId, {
           status: oldStatus,
           runtimeHandle: metadata.runtimeHandle ?? "",
+          restoredAt: "",
         });
       } catch {
         /* best effort */
