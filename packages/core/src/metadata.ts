@@ -92,6 +92,7 @@ export function readMetadata(dataDir: string, sessionId: SessionId): SessionMeta
     createdAt: raw["createdAt"],
     runtimeHandle: raw["runtimeHandle"],
     permissions: raw["permissions"],
+    model: raw["model"],
     restoredAt: raw["restoredAt"],
   };
 }
@@ -132,6 +133,7 @@ export function writeMetadata(
   if (metadata.createdAt) data["createdAt"] = metadata.createdAt;
   if (metadata.runtimeHandle) data["runtimeHandle"] = metadata.runtimeHandle;
   if (metadata.permissions) data["permissions"] = metadata.permissions;
+  if (metadata.model) data["model"] = metadata.model;
   if (metadata.restoredAt) data["restoredAt"] = metadata.restoredAt;
 
   writeFileSync(path, serializeMetadata(data), "utf-8");
