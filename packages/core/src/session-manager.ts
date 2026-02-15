@@ -395,6 +395,7 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
         createdAt: new Date().toISOString(),
         runtimeHandle: JSON.stringify(handle),
         permissions: project.agentConfig?.permissions,
+        model: project.agentConfig?.model,
       });
 
       if (plugins.agent.postLaunchSetup) {

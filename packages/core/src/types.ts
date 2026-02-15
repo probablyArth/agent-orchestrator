@@ -949,6 +949,7 @@ export interface SessionMetadata {
   createdAt?: string;
   runtimeHandle?: string;
   permissions?: string;
+  model?: string;
   restoredAt?: string;
 }
 

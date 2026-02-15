@@ -746,7 +746,7 @@ function createClaudeCodeAgent(): Agent {
       // Session ID is the filename without .jsonl extension
       const claudeSessionId = basename(sessionFile, ".jsonl");
 
-      // Build resume command
+      // Build resume command with same config as original session
       const parts = ["claude", "--resume", shellEscape(claudeSessionId)];
 
       // Check permissions: prefer metadata (new sessions), fall back to project config (old sessions)
