@@ -145,6 +145,16 @@ export function create(config?: Record<string, unknown>): Workspace {
 
     async restore(path: string, repoPath: string, branch: string): Promise<void> {
       const expandedRepoPath = expandPath(repoPath);
+
+      // Prune stale worktree references (in case destroy fell back to rmSync)
+      try {
+        await execFileAsync("git", ["-C", expandedRepoPath, "worktree", "prune"], {
+          timeout: 10_000,
+        });
+      } catch {
+        // Prune failure is non-fatal; worktree add might still succeed
+      }
+
       // Create worktree at exact path on existing branch
       const { stderr } = await execFileAsync(
         "git",
