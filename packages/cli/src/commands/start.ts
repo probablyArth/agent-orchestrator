@@ -179,51 +179,11 @@ export function registerStart(program: Command): void {
 
           console.log(chalk.bold(`\nStarting orchestrator for ${chalk.cyan(project.name)}\n`));
 
-          // Check if orchestrator session already exists
-          const exists = await hasTmuxSession(sessionId);
-
-          // Ensure CLAUDE.orchestrator.md exists
-          const spinner = ora("Generating orchestrator prompt").start();
-          ensureOrchestratorPrompt(
-            project.path,
-            config,
-            projectId,
-            project,
-            opts?.regenerate ?? false,
-          );
-          spinner.succeed("Orchestrator prompt ready");
-
-          // Ensure CLAUDE.local.md imports CLAUDE.orchestrator.md
-          spinner.start("Configuring CLAUDE.local.md");
-          try {
-            ensureOrchestratorImport(project.path);
-            spinner.succeed("CLAUDE.local.md configured");
-          } catch (err) {
-            spinner.fail("Could not write CLAUDE.local.md");
-            throw new Error(
-              `Failed to update CLAUDE.local.md: ${err instanceof Error ? err.message : String(err)}`,
-              { cause: err },
-            );
-          }
-
-          // Setup agent hooks for automatic metadata updates
-          spinner.start("Configuring agent hooks");
-          try {
-            const agent = getAgent(config, projectId);
-            if (agent.setupWorkspaceHooks) {
-              await agent.setupWorkspaceHooks(project.path, { dataDir: config.dataDir });
-            }
-            spinner.succeed("Agent hooks configured");
-          } catch (err) {
-            spinner.fail("Could not setup agent hooks");
-            throw new Error(
-              `Failed to setup agent hooks: ${err instanceof Error ? err.message : String(err)}`,
-              { cause: err },
-            );
-          }
-
           // Start dashboard (unless --no-dashboard)
+          const spinner = ora();
           let dashboardProcess: ChildProcess | null = null;
+          let exists = false; // Track whether orchestrator session already exists
+
           if (opts?.dashboard !== false) {
             spinner.start("Starting dashboard");
             const webDir = findWebDir();
@@ -241,13 +201,56 @@ export function registerStart(program: Command): void {
 
           // Create orchestrator tmux session (unless --no-orchestrator or already exists)
           if (opts?.orchestrator !== false) {
+            // Check if orchestrator session already exists
+            exists = await hasTmuxSession(sessionId);
+
             if (exists) {
               console.log(chalk.yellow(`Orchestrator session "${sessionId}" is already running (skipping creation)`));
             } else {
+              // Ensure CLAUDE.orchestrator.md exists
+              spinner.start("Generating orchestrator prompt");
+              ensureOrchestratorPrompt(
+                project.path,
+                config,
+                projectId,
+                project,
+                opts?.regenerate ?? false,
+              );
+              spinner.succeed("Orchestrator prompt ready");
+
+              // Ensure CLAUDE.local.md imports CLAUDE.orchestrator.md
+              spinner.start("Configuring CLAUDE.local.md");
+              try {
+                ensureOrchestratorImport(project.path);
+                spinner.succeed("CLAUDE.local.md configured");
+              } catch (err) {
+                spinner.fail("Could not write CLAUDE.local.md");
+                throw new Error(
+                  `Failed to update CLAUDE.local.md: ${err instanceof Error ? err.message : String(err)}`,
+                  { cause: err },
+                );
+              }
+
+              // Setup agent hooks for automatic metadata updates
+              spinner.start("Configuring agent hooks");
+              try {
+                const agent = getAgent(config, projectId);
+                if (agent.setupWorkspaceHooks) {
+                  await agent.setupWorkspaceHooks(project.path, { dataDir: config.dataDir });
+                }
+                spinner.succeed("Agent hooks configured");
+              } catch (err) {
+                spinner.fail("Could not setup agent hooks");
+                throw new Error(
+                  `Failed to setup agent hooks: ${err instanceof Error ? err.message : String(err)}`,
+                  { cause: err },
+                );
+              }
+
               spinner.start("Creating orchestrator session");
 
-            // Get agent launch command
-            const agent = getAgent(config, projectId);
+              // Get agent launch command
+              const agent = getAgent(config, projectId);
             const launchCmd = agent.getLaunchCommand({
               sessionId,
               projectConfig: project,
