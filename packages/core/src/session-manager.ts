@@ -643,13 +643,14 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
       throw new Error(`Session ${sessionId} not found`);
     }
 
+    // Capture original metadata status for error revert (before get() resolves it)
+    const oldStatus = (metadata["status"] as SessionStatus) ?? "working";
+
     // 2. Get resolved session (checks runtime liveness for accurate status)
     const currentSession = await get(sessionId);
     if (!currentSession) {
       throw new Error(`Session ${sessionId} not found after metadata read`);
     }
-
-    const oldStatus = currentSession.status;
 
     // 3. Validate restorable status - use centralized helper
     if (!isRestorable(currentSession)) {
@@ -732,7 +733,7 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
     }
 
     const restoreCmd = plugins.agent.getRestoreCommand
-      ? await plugins.agent.getRestoreCommand(session)
+      ? await plugins.agent.getRestoreCommand(session, project)
       : null;
 
     let launchCommand: string;

@@ -322,7 +322,7 @@ export interface Agent {
    * Example (Claude Code): "claude --resume abc123def --dangerously-skip-permissions"
    * Example (fallback): null → will use getLaunchCommand() instead
    */
-  getRestoreCommand?(session: Session): Promise<string | null>;
+  getRestoreCommand?(session: Session, project: ProjectConfig): Promise<string | null>;
 }
 
 export interface AgentLaunchConfig {
