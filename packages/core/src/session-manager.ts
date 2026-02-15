@@ -15,6 +15,8 @@ import { statSync } from "node:fs";
 import { join } from "node:path";
 import {
   isIssueNotFoundError,
+  SessionNotRestorableError,
+  WorkspaceMissingError,
   type SessionManager,
   type Session,
   type SessionId,
@@ -33,7 +35,6 @@ import {
   type Issue,
   PR_STATE,
 } from "./types.js";
-import { SessionNotRestorableError, WorkspaceMissingError } from "./types.js";
 import {
   readMetadataRaw,
   writeMetadata,

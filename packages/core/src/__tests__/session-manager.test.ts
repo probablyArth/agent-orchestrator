@@ -5,16 +5,17 @@ import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { createSessionManager } from "../session-manager.js";
 import { writeMetadata, readMetadata } from "../metadata.js";
-import { SessionNotRestorableError, WorkspaceMissingError } from "../types.js";
-import type {
-  OrchestratorConfig,
-  PluginRegistry,
-  Runtime,
-  Agent,
-  Workspace,
-  Tracker,
-  SCM,
-  RuntimeHandle,
+import {
+  SessionNotRestorableError,
+  WorkspaceMissingError,
+  type OrchestratorConfig,
+  type PluginRegistry,
+  type Runtime,
+  type Agent,
+  type Workspace,
+  type Tracker,
+  type SCM,
+  type RuntimeHandle,
 } from "../types.js";
 
 let dataDir: string;
