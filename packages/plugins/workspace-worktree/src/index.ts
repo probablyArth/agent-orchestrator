@@ -148,23 +148,13 @@ export function create(config?: Record<string, unknown>): Workspace {
 
       // Prune stale worktree references (in case destroy fell back to rmSync)
       try {
-        await execFileAsync("git", ["-C", expandedRepoPath, "worktree", "prune"], {
-          timeout: 10_000,
-        });
+        await git(expandedRepoPath, "worktree", "prune");
       } catch {
         // Prune failure is non-fatal; worktree add might still succeed
       }
 
-      // Create worktree at exact path on existing branch
-      const { stderr } = await execFileAsync(
-        "git",
-        ["-C", expandedRepoPath, "worktree", "add", path, branch],
-        { timeout: 60_000 },
-      );
-
-      if (stderr && !stderr.includes("Preparing worktree")) {
-        throw new Error(`Failed to restore worktree: ${stderr}`);
-      }
+      // Create worktree at exact path on existing branch (ignore stderr like create())
+      await git(expandedRepoPath, "worktree", "add", path, branch);
     },
 
     async list(projectId: string): Promise<WorkspaceInfo[]> {
