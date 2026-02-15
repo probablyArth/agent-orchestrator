@@ -1,13 +1,15 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { type DashboardSession, type AttentionLevel, getAttentionLevel } from "@/lib/types";
-import { CI_STATUS } from "@composio/ao-core/types";
 import {
+  type DashboardSession,
+  type AttentionLevel,
+  getAttentionLevel,
+  CI_STATUS,
   TERMINAL_STATUSES,
   TERMINAL_ACTIVITIES,
   NON_RESTORABLE_STATUSES,
-} from "@composio/ao-core";
+} from "@/lib/types";
 import { cn } from "@/lib/cn";
 import { PRStatus } from "./PRStatus";
 import { CICheckList } from "./CIBadge";

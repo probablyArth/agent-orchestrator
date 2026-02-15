@@ -29,6 +29,39 @@ import {
   type ReviewDecision,
 } from "@composio/ao-core/types";
 
+// =============================================================================
+// State classification constants (duplicated from @composio/ao-core/constants)
+// =============================================================================
+
+/**
+ * Session statuses that indicate a terminal (ended) state.
+ * Terminal sessions cannot accept new work and should be hidden or archived.
+ */
+export const TERMINAL_STATUSES: ReadonlySet<SessionStatus> = new Set([
+  "killed",
+  "cleanup",
+  "terminated",
+  "done",
+  "merged",
+]);
+
+/**
+ * Activity states that indicate the runtime has exited.
+ */
+export const TERMINAL_ACTIVITIES: ReadonlySet<ActivityState> = new Set([
+  "exited",
+]);
+
+/**
+ * Session statuses that cannot be restored.
+ * "merged" sessions are complete and should not be revived.
+ * "working" sessions are already running and don't need restoration.
+ */
+export const NON_RESTORABLE_STATUSES: ReadonlySet<SessionStatus> = new Set([
+  "merged",
+  "working",
+]);
+
 /**
  * Attention zone priority level, ordered by human action urgency:
  *
