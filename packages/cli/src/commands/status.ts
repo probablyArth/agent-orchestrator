@@ -77,11 +77,12 @@ function buildSessionForIntrospect(
 
 /**
  * Classify activity state based on message type from agent introspection.
- * Matches the agent plugin's getActivityState() classification logic.
+ * Extends the agent plugin's getActivityState() to also handle CLI-specific types.
  * Helper function to avoid duplicating classification logic.
  */
 function classifyByMessageType(msgType: string | undefined): ActivityState | null {
-  if (msgType === "assistant" || msgType === "system") {
+  // Message types indicating agent finished its turn → ready for input
+  if (msgType === "assistant" || msgType === "system" || msgType === "summary") {
     return "ready";
   } else if (msgType === "tool_use" || msgType === "user") {
     return "active";
