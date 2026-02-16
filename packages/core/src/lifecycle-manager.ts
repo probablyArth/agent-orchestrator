@@ -521,8 +521,8 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         const result = await mainBranchTracker.checkMainAdvanced(project, projectId, scm);
         if (!result.advanced) continue;
 
-        // Trigger rebases for all open PRs
-        await rebaseAllSessions(projectSessionsList, project, scm);
+        // Trigger rebases for all open PRs, passing the main branch SHA
+        await rebaseAllSessions(projectSessionsList, project, scm, result.newSha);
       } catch {
         // Continue with other projects
       }
@@ -534,6 +534,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     sessions: Session[],
     project: ProjectConfig,
     scm: SCM,
+    mainBranchSHA: string,
   ): Promise<void> {
     const agent = registry.get<Agent>("agent", project.agent ?? config.defaults.agent);
 
@@ -563,7 +564,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
           // Silent success - update metadata
           updateMetadata(config.dataDir, session.id, {
             lastRebaseTime: new Date().toISOString(),
-            lastRebaseMainSHA: result.newSha ?? "",
+            lastRebaseMainSHA: mainBranchSHA,
             rebaseStatus: "clean",
           });
 
@@ -625,6 +626,42 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     }
   }
 
+  /** Check sessions with rebase conflicts and re-trigger reactions for escalation. */
+  async function checkRebaseConflicts(sessions: Session[]): Promise<void> {
+    for (const session of sessions) {
+      try {
+        // Only check sessions with conflicted rebase status
+        const rebaseStatus = session.metadata?.["rebaseStatus"];
+        if (rebaseStatus !== "conflicted") continue;
+
+        // Get project config
+        const project = config.projects[session.projectId];
+        if (!project) continue;
+
+        // Get reaction config (merge project overrides with defaults)
+        const reactionKey = "rebase-conflicts";
+        const globalReaction = config.reactions[reactionKey];
+        const projectReaction = project.reactions?.[reactionKey];
+        const reactionConfig = projectReaction
+          ? { ...globalReaction, ...projectReaction }
+          : globalReaction;
+
+        if (reactionConfig && reactionConfig.action) {
+          // Re-execute reaction (checks escalation timer)
+          await executeReaction(
+            session.id,
+            session.projectId,
+            reactionKey,
+            reactionConfig as ReactionConfig,
+          );
+        }
+      } catch {
+        // Continue with other sessions
+        continue;
+      }
+    }
+  }
+
   /** Run one polling cycle across all sessions. */
   async function pollAll(): Promise<void> {
     // Re-entrancy guard: skip if previous poll is still running
@@ -636,6 +673,9 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
 
       // Check for main branch advancement and trigger rebases
       await checkMainBranchUpdates(sessions);
+
+      // Re-evaluate sessions with rebase conflicts (for escalation)
+      await checkRebaseConflicts(sessions);
 
       // Include sessions that are active OR whose status changed from what we last saw
       // (e.g., list() detected a dead runtime and marked it "killed" — we need to
