@@ -265,32 +265,15 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
           if (pendingComments.length > 0) {
             return "review_comments_unresolved";
           }
-
-          // All comments resolved — transition out of review_comments_unresolved
-          if (session.status === "review_comments_unresolved" && pendingComments.length === 0) {
-            if (reviewDecision === "approved") {
-              const mergeReady = await scm.getMergeability(session.pr);
-              if (mergeReady.mergeable) return "mergeable";
-              return "approved";
-            }
-            return "pr_open";
-          }
+          // When all comments resolved, fall through to normal review decision handling
         }
 
         // Continue with normal review decision handling
         if (reviewDecision === "approved") {
           const mergeReady = await scm.getMergeability(session.pr);
-          if (mergeReady.mergeable) {
-            // Enhance mergeable check: no pending comments required
-            if (
-              pendingComments !== null &&
-              Array.isArray(pendingComments) &&
-              pendingComments.length > 0
-            ) {
-              return "approved"; // Has pending comments → not truly mergeable
-            }
-            return "mergeable";
-          }
+          // Note: mergeable check already accounts for pending comments since
+          // we return review_comments_unresolved earlier if any comments exist
+          if (mergeReady.mergeable) return "mergeable";
           return "approved";
         }
         if (reviewDecision === "pending") return "review_pending";
@@ -541,7 +524,12 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
 
     // Special handling for review_comments_unresolved: check for new comments
     // even when status hasn't changed (to trigger reactions for newly added comments)
-    if (newStatus === "review_comments_unresolved" && session.pr) {
+    // Skip if we just transitioned INTO this status (to avoid double-firing the reaction)
+    if (
+      newStatus === "review_comments_unresolved" &&
+      oldStatus === "review_comments_unresolved" &&
+      session.pr
+    ) {
       const project = config.projects[session.projectId];
       const scm = project?.scm ? registry.get<SCM>("scm", project.scm.plugin) : null;
 
