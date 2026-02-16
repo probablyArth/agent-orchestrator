@@ -267,6 +267,17 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
           // If there are ANY pending comments, stay in review_comments_unresolved
           // (checkSession will detect new comments and trigger reactions)
           if (pendingComments.length > 0) {
+            // Initialize reviewCommentsSeen on first transition to prevent duplicate reactions
+            // Only update if currently unset (empty or missing) to avoid overwriting existing tracking
+            const currentSeenIds = session.metadata?.["reviewCommentsSeen"] || "";
+            if (!currentSeenIds) {
+              // First time detecting comments — mark all current comments as seen
+              // This prevents the reaction from firing twice (once on transition, once on next poll)
+              const allCommentIds = pendingComments.map((c) => c.id).join(",");
+              updateMetadata(config.dataDir, session.id, {
+                reviewCommentsSeen: allCommentIds,
+              });
+            }
             return "review_comments_unresolved";
           }
           // When all comments resolved, fall through to normal review decision handling
