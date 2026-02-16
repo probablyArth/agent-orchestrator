@@ -184,6 +184,8 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let polling = false; // re-entrancy guard
   let allCompleteEmitted = false; // guard against repeated all_complete
+  // Cache pending comments per session for the current poll cycle to avoid redundant API calls
+  const pendingCommentsCache = new Map<SessionId, Awaited<ReturnType<SCM["getPendingComments"]>>>();
 
   /** Determine current status for a session by polling plugins. */
   async function determineStatus(session: Session): Promise<SessionStatus> {
@@ -244,10 +246,12 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         const ciStatus = await scm.getCISummary(session.pr);
         if (ciStatus === CI_STATUS.FAILING) return "ci_failed";
 
-        // Fetch pending comments once (cache for reuse)
+        // Fetch pending comments once and cache for reuse in checkSession
         let pendingComments: Awaited<ReturnType<typeof scm.getPendingComments>> | null = null;
         try {
           pendingComments = await scm.getPendingComments(session.pr);
+          // Cache the result for use in checkSession (avoids redundant API call)
+          pendingCommentsCache.set(session.id, pendingComments);
         } catch {
           // getPendingComments failed — will proceed without comment data
         }
@@ -535,7 +539,13 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
 
       if (scm) {
         try {
-          const pendingComments = await scm.getPendingComments(session.pr);
+          // Reuse cached pending comments from determineStatus to avoid redundant API call
+          const pendingComments = pendingCommentsCache.get(session.id);
+          if (!pendingComments || !Array.isArray(pendingComments)) {
+            // Cache miss or invalid data — skip new comment detection
+            return;
+          }
+
           const seenIdsStr = session.metadata?.["reviewCommentsSeen"] || "";
           const seenIds = new Set(seenIdsStr.split(",").filter(Boolean));
           const newComments = pendingComments.filter((c) => !seenIds.has(c.id));
@@ -631,6 +641,8 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
       // Poll cycle failed — will retry next interval
     } finally {
       polling = false;
+      // Clear the pending comments cache after each poll cycle
+      pendingCommentsCache.clear();
     }
   }
 
