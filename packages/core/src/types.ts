@@ -53,8 +53,22 @@ export class RateLimitError extends Error {
       hour: "2-digit",
       minute: "2-digit",
     });
+
+    // Format retry time as human-readable string with correct grammar
+    let retryMessage: string;
+    if (retryAfter === 0) {
+      retryMessage = "should be available now";
+    } else if (retryAfter < 60) {
+      const plural = retryAfter === 1 ? "" : "s";
+      retryMessage = `in ${retryAfter} second${plural}`;
+    } else {
+      const minutes = Math.ceil(retryAfter / 60);
+      const plural = minutes === 1 ? "" : "s";
+      retryMessage = `in ${minutes} minute${plural}`;
+    }
+
     super(
-      `Rate limit exceeded for ${resource}. Resets at ${resetTime} (in ${Math.ceil(retryAfter / 60)} minutes)`,
+      `Rate limit exceeded for ${resource}. Resets at ${resetTime} (${retryMessage})`,
       options,
     );
     this.name = "RateLimitError";

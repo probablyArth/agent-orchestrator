@@ -55,7 +55,7 @@ describe("RateLimitError", () => {
     const error = new RateLimitError("rest", resetAt);
 
     expect(error.retryAfter).toBe(30);
-    expect(error.message).toContain("1 minutes"); // Ceiling of 30s / 60 = 1 min
+    expect(error.message).toContain("30 seconds"); // Shows seconds, not minutes
 
     vi.useRealTimers();
   });
@@ -70,6 +70,7 @@ describe("RateLimitError", () => {
 
     // retryAfter should be 0 (already reset)
     expect(error.retryAfter).toBe(0);
+    expect(error.message).toContain("should be available now");
 
     vi.useRealTimers();
   });
@@ -93,5 +94,41 @@ describe("RateLimitError", () => {
 
     const searchError = new RateLimitError("search", resetAt);
     expect(searchError.resource).toBe("search");
+  });
+
+  it("should handle singular forms correctly", () => {
+    vi.useFakeTimers();
+    const now = new Date("2026-02-16T10:00:00Z");
+    vi.setSystemTime(now);
+
+    // 1 second
+    const resetAt1s = new Date("2026-02-16T10:00:01Z");
+    const error1s = new RateLimitError("rest", resetAt1s);
+    expect(error1s.message).toContain("1 second"); // singular, not "1 seconds"
+
+    // 1 minute
+    const resetAt1m = new Date("2026-02-16T10:01:00Z");
+    const error1m = new RateLimitError("rest", resetAt1m);
+    expect(error1m.message).toContain("1 minute"); // singular, not "1 minutes"
+
+    vi.useRealTimers();
+  });
+
+  it("should handle plural forms correctly", () => {
+    vi.useFakeTimers();
+    const now = new Date("2026-02-16T10:00:00Z");
+    vi.setSystemTime(now);
+
+    // 2 seconds
+    const resetAt2s = new Date("2026-02-16T10:00:02Z");
+    const error2s = new RateLimitError("rest", resetAt2s);
+    expect(error2s.message).toContain("2 seconds");
+
+    // 2 minutes
+    const resetAt2m = new Date("2026-02-16T10:02:00Z");
+    const error2m = new RateLimitError("rest", resetAt2m);
+    expect(error2m.message).toContain("2 minutes");
+
+    vi.useRealTimers();
   });
 });
