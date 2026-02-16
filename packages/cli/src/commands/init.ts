@@ -1,9 +1,11 @@
 import { createInterface } from "node:readline/promises";
 import { writeFileSync, existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { resolve, basename } from "node:path";
+import { cwd } from "node:process";
 import { stringify as yamlStringify } from "yaml";
 import chalk from "chalk";
 import type { Command } from "commander";
+import { git, gh, execSilent } from "../lib/shell.js";
 
 async function prompt(
   rl: ReturnType<typeof createInterface>,
@@ -13,6 +15,72 @@ async function prompt(
   const suffix = defaultValue ? ` ${chalk.dim(`(${defaultValue})`)}` : "";
   const answer = await rl.question(`${question}${suffix}: `);
   return answer.trim() || defaultValue || "";
+}
+
+interface EnvironmentInfo {
+  isGitRepo: boolean;
+  gitRemote: string | null;
+  ownerRepo: string | null;
+  currentBranch: string | null;
+  hasTmux: boolean;
+  hasGh: boolean;
+  ghAuthed: boolean;
+  hasLinearKey: boolean;
+  hasSlackWebhook: boolean;
+}
+
+async function detectEnvironment(workingDir: string): Promise<EnvironmentInfo> {
+  // Check if in git repo
+  const isGitRepo = (await git(["rev-parse", "--git-dir"], workingDir)) !== null;
+
+  // Get git remote
+  let gitRemote: string | null = null;
+  let ownerRepo: string | null = null;
+  if (isGitRepo) {
+    gitRemote = await git(["remote", "get-url", "origin"], workingDir);
+    if (gitRemote) {
+      // Parse owner/repo from remote
+      // Examples:
+      //   git@github.com:owner/repo.git
+      //   https://github.com/owner/repo.git
+      const match = gitRemote.match(/github\.com[:/]([^/]+\/[^/]+?)(\.git)?$/);
+      if (match) {
+        ownerRepo = match[1];
+      }
+    }
+  }
+
+  // Get current branch
+  const currentBranch = isGitRepo ? await git(["branch", "--show-current"], workingDir) : null;
+
+  // Check for tmux
+  const hasTmux = (await execSilent("which", ["tmux"])) !== null;
+
+  // Check for gh CLI
+  const hasGh = (await execSilent("which", ["gh"])) !== null;
+
+  // Check gh auth status
+  let ghAuthed = false;
+  if (hasGh) {
+    const authStatus = await gh(["auth", "status"]);
+    ghAuthed = authStatus !== null && !authStatus.includes("not logged in");
+  }
+
+  // Check for API keys in environment
+  const hasLinearKey = !!process.env["LINEAR_API_KEY"];
+  const hasSlackWebhook = !!process.env["SLACK_WEBHOOK_URL"];
+
+  return {
+    isGitRepo,
+    gitRemote,
+    ownerRepo,
+    currentBranch,
+    hasTmux,
+    hasGh,
+    ghAuthed,
+    hasLinearKey,
+    hasSlackWebhook,
+  };
 }
 
 export function registerInit(program: Command): void {
@@ -30,6 +98,52 @@ export function registerInit(program: Command): void {
       }
 
       console.log(chalk.bold.cyan("\n  Agent Orchestrator — Setup Wizard\n"));
+      console.log(chalk.dim("  Detecting environment...\n"));
+
+      const workingDir = cwd();
+      const env = await detectEnvironment(workingDir);
+
+      // Show detection results
+      if (env.isGitRepo) {
+        console.log(chalk.green("  ✓ Git repository detected"));
+        if (env.ownerRepo) {
+          console.log(chalk.dim(`    Remote: ${env.ownerRepo}`));
+        }
+        if (env.currentBranch) {
+          console.log(chalk.dim(`    Branch: ${env.currentBranch}`));
+        }
+      } else {
+        console.log(chalk.dim("  ○ Not in a git repository"));
+      }
+
+      if (env.hasTmux) {
+        console.log(chalk.green("  ✓ tmux available"));
+      } else {
+        console.log(chalk.yellow("  ⚠ tmux not found"));
+        console.log(chalk.dim("    Install with: brew install tmux"));
+      }
+
+      if (env.hasGh) {
+        if (env.ghAuthed) {
+          console.log(chalk.green("  ✓ GitHub CLI authenticated"));
+        } else {
+          console.log(chalk.yellow("  ⚠ GitHub CLI not authenticated"));
+          console.log(chalk.dim("    Run: gh auth login"));
+        }
+      } else {
+        console.log(chalk.yellow("  ⚠ GitHub CLI not found"));
+        console.log(chalk.dim("    Install with: brew install gh"));
+      }
+
+      if (env.hasLinearKey) {
+        console.log(chalk.green("  ✓ LINEAR_API_KEY detected"));
+      }
+
+      if (env.hasSlackWebhook) {
+        console.log(chalk.green("  ✓ SLACK_WEBHOOK_URL detected"));
+      }
+
+      console.log();
 
       const rl = createInterface({
         input: process.stdin,
@@ -37,6 +151,8 @@ export function registerInit(program: Command): void {
       });
 
       try {
+        // Basic config
+        console.log(chalk.bold("  Configuration\n"));
         const dataDir = await prompt(
           rl,
           "Data directory (session metadata)",
@@ -46,7 +162,7 @@ export function registerInit(program: Command): void {
         const portStr = await prompt(rl, "Dashboard port", "3000");
         const port = parseInt(portStr, 10);
         if (isNaN(port) || port < 1 || port > 65535) {
-          console.error(chalk.red("Invalid port number. Must be 1-65535."));
+          console.error(chalk.red("\nInvalid port number. Must be 1-65535."));
           rl.close();
           process.exit(1);
         }
@@ -58,14 +174,19 @@ export function registerInit(program: Command): void {
         const workspace = await prompt(rl, "Workspace (worktree, clone)", "worktree");
         const notifiersStr = await prompt(
           rl,
-          "Notifiers (comma-separated: desktop, slack, webhook)",
+          "Notifiers (comma-separated: desktop, slack)",
           "desktop",
         );
         const notifiers = notifiersStr.split(",").map((s) => s.trim());
 
         // First project
         console.log(chalk.bold("\n  First Project\n"));
-        const projectId = await prompt(rl, "Project ID (short name, e.g. my-app)", "");
+        const defaultProjectId = env.isGitRepo ? basename(workingDir) : "";
+        const projectId = await prompt(
+          rl,
+          "Project ID (short name, e.g. my-app)",
+          defaultProjectId,
+        );
 
         const config: Record<string, unknown> = {
           dataDir,
@@ -76,22 +197,101 @@ export function registerInit(program: Command): void {
         };
 
         if (projectId) {
-          const repo = await prompt(rl, "GitHub repo (owner/repo)", "");
-          const path = await prompt(rl, "Local path to repo", `~/${projectId}`);
-          const defaultBranch = await prompt(rl, "Default branch", "main");
+          const repo = await prompt(rl, "GitHub repo (owner/repo)", env.ownerRepo || "");
+          const path = await prompt(
+            rl,
+            "Local path to repo",
+            env.isGitRepo ? workingDir : `~/${projectId}`,
+          );
+          const defaultBranch = await prompt(rl, "Default branch", env.currentBranch || "main");
 
-          (config.projects as Record<string, unknown>)[projectId] = {
+          // Ask about tracker
+          console.log(chalk.bold("\n  Issue Tracker\n"));
+          if (env.hasLinearKey) {
+            console.log(chalk.dim("  (LINEAR_API_KEY detected)\n"));
+          }
+          const tracker = await prompt(
+            rl,
+            "Tracker (github, linear, none)",
+            env.hasLinearKey ? "linear" : "github",
+          );
+
+          const projectConfig: Record<string, unknown> = {
             repo,
             path,
             defaultBranch,
           };
+
+          if (tracker === "linear") {
+            if (!env.hasLinearKey) {
+              console.log(chalk.yellow("\nWarning: LINEAR_API_KEY not found in environment"));
+              console.log(chalk.dim("Set it in your shell profile or .env file"));
+              console.log(chalk.dim("Get your key at: https://linear.app/settings/api\n"));
+            }
+
+            const teamId = await prompt(rl, "Linear team ID (find at linear.app/settings/api)", "");
+            if (teamId) {
+              projectConfig.tracker = { plugin: "linear", teamId };
+            }
+          } else if (tracker === "none") {
+            // Don't add tracker config
+          } else {
+            // Default to github (no explicit config needed)
+          }
+
+          (config.projects as Record<string, unknown>)[projectId] = projectConfig;
         }
 
         const yamlContent = yamlStringify(config, { indent: 2 });
         writeFileSync(outputPath, yamlContent);
 
-        console.log(chalk.green(`\nConfig written to ${outputPath}`));
-        console.log(chalk.dim("Edit the file to add more projects or customize reactions.\n"));
+        // Validation checks
+        console.log(chalk.bold("\n  Validating Setup...\n"));
+
+        const checks = [
+          { name: "Git", pass: (await execSilent("git", ["--version"])) !== null },
+          { name: "tmux", pass: env.hasTmux },
+          { name: "GitHub CLI", pass: env.hasGh },
+          { name: "Repo path exists", pass: env.isGitRepo || !projectId },
+        ];
+
+        for (const { name, pass } of checks) {
+          if (pass) {
+            console.log(chalk.green(`  ✓ ${name}`));
+          } else {
+            console.log(chalk.yellow(`  ⚠ ${name} not found`));
+          }
+        }
+
+        // Success message and next steps
+        console.log(chalk.green(`\n✓ Config written to ${outputPath}\n`));
+        console.log(chalk.bold("Next steps:\n"));
+        console.log("  1. Review and edit the config:");
+        console.log(chalk.cyan(`     nano ${outputPath}\n`));
+
+        if (projectId) {
+          console.log("  2. Spawn your first agent:");
+          console.log(chalk.cyan(`     ao spawn ${projectId} ISSUE-123\n`));
+        } else {
+          console.log("  2. Add a project to the config:");
+          console.log(chalk.cyan(`     nano ${outputPath}\n`));
+        }
+
+        console.log("  3. Monitor progress:");
+        console.log(chalk.cyan("     ao status\n"));
+        console.log("  4. Open dashboard:");
+        console.log(chalk.cyan("     ao start\n"));
+        console.log(chalk.dim("See SETUP.md for detailed configuration options.\n"));
+
+        if (!env.hasTmux) {
+          console.log(chalk.yellow("Note: tmux is required for the default runtime."));
+          console.log(chalk.dim("Install with: brew install tmux\n"));
+        }
+
+        if (!env.ghAuthed && env.hasGh) {
+          console.log(chalk.yellow("Note: Authenticate GitHub CLI for full functionality."));
+          console.log(chalk.dim("Run: gh auth login\n"));
+        }
       } finally {
         rl.close();
       }
