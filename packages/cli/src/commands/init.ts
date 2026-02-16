@@ -428,6 +428,7 @@ async function handleAutoMode(outputPath: string, smart: boolean): Promise<void>
   // Build config with smart defaults
   const projectId = env.isGitRepo ? basename(workingDir) : "my-project";
   const repo = env.ownerRepo || "owner/repo";
+  const hasPlaceholderRepo = repo === "owner/repo";
   const path = env.isGitRepo ? workingDir : `~/${projectId}`;
   const defaultBranch = env.defaultBranch || "main";
 
@@ -458,6 +459,12 @@ async function handleAutoMode(outputPath: string, smart: boolean): Promise<void>
   // Show success message
   console.log(chalk.green(`✓ Config written to ${outputPath}\n`));
 
+  // Warn if placeholder repo value is used
+  if (hasPlaceholderRepo) {
+    console.log(chalk.yellow("⚠ Warning: Could not detect GitHub repository"));
+    console.log(chalk.dim("  Update the 'repo' field in the config before spawning agents\n"));
+  }
+
   // Show generated rules
   if (agentRules) {
     console.log(chalk.bold("Generated agent rules:\n"));
@@ -470,12 +477,22 @@ async function handleAutoMode(outputPath: string, smart: boolean): Promise<void>
 
   // Show next steps
   console.log(chalk.bold("Next steps:\n"));
-  console.log("  1. Review and customize (optional):");
-  console.log(chalk.cyan(`     nano ${outputPath}\n`));
-  console.log("  2. Spawn your first agent:");
-  console.log(chalk.cyan(`     ao spawn ${projectId} ISSUE-123\n`));
-  console.log("  3. Monitor progress:");
-  console.log(chalk.cyan("     ao status\n"));
+
+  if (hasPlaceholderRepo) {
+    console.log("  1. Edit config and update 'repo' field:");
+    console.log(chalk.cyan(`     nano ${outputPath}\n`));
+    console.log("  2. Spawn your first agent:");
+    console.log(chalk.cyan(`     ao spawn ${projectId} ISSUE-123\n`));
+    console.log("  3. Monitor progress:");
+    console.log(chalk.cyan("     ao status\n"));
+  } else {
+    console.log("  1. Review and customize (optional):");
+    console.log(chalk.cyan(`     nano ${outputPath}\n`));
+    console.log("  2. Spawn your first agent:");
+    console.log(chalk.cyan(`     ao spawn ${projectId} ISSUE-123\n`));
+    console.log("  3. Monitor progress:");
+    console.log(chalk.cyan("     ao status\n"));
+  }
 
   // Show warnings
   if (!env.hasTmux) {
