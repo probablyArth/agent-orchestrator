@@ -20,7 +20,9 @@ echo "🔨 Building all packages..."
 pnpm build
 
 echo "🔗 Linking CLI globally..."
-npm link -g ./packages/cli
+cd packages/cli
+npm link
+cd ../..
 
 echo ""
 echo "✅ Setup complete! The 'ao' command is now available."
