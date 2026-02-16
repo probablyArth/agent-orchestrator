@@ -451,6 +451,12 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
       // Filter by project if specified (before building session object - more efficient)
       if (projectId && raw["project"] !== projectId) continue;
 
+      // Skip sessions without required project field to avoid crashing entire list
+      if (!raw["project"]) {
+        console.warn(`Skipping session ${sid}: missing required 'project' field`);
+        continue;
+      }
+
       const session = metadataToSession(sid, raw, createdAt, modifiedAt);
 
       // Enrich with live runtime state and activity detection
