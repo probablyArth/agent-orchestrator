@@ -75,6 +75,19 @@ function buildSessionForIntrospect(
   };
 }
 
+/**
+ * Classify activity state based on message type from agent introspection.
+ * Helper function to avoid duplicating classification logic.
+ */
+function classifyByMessageType(msgType: string | undefined): ActivityState | null {
+  if (msgType === "summary" || msgType === "assistant" || msgType === "result") {
+    return "ready";
+  } else if (msgType === "tool_use" || msgType === "user") {
+    return "active";
+  }
+  return null;
+}
+
 async function gatherSessionInfo(
   sessionName: string,
   sessionDir: string,
@@ -122,21 +135,11 @@ async function gatherSessionInfo(
         activity = "idle";
       } else {
         // Fresh session, classify by message type
-        const msgType = introspection?.lastMessageType;
-        if (msgType === "summary" || msgType === "assistant" || msgType === "result") {
-          activity = "ready";
-        } else if (msgType === "tool_use" || msgType === "user") {
-          activity = "active";
-        }
+        activity = classifyByMessageType(introspection?.lastMessageType);
       }
     } else {
       // No timestamp available, classify by message type without staleness check
-      const msgType = introspection?.lastMessageType;
-      if (msgType === "summary" || msgType === "assistant" || msgType === "result") {
-        activity = "ready";
-      } else if (msgType === "tool_use" || msgType === "user") {
-        activity = "active";
-      }
+      activity = classifyByMessageType(introspection?.lastMessageType);
     }
   } catch {
     // Introspection failed — not critical
