@@ -499,8 +499,12 @@ describe("plugin integration", () => {
       // 1. getPRState → open
       mockGh({ state: "OPEN" });
       // 2. getCISummary → passing (using correct field names: state and link)
-      mockGh([{ name: "lint", state: "SUCCESS", link: "", startedAt: "", completedAt: "" }]);
-      // 3. getReviewDecision (gh pr view with reviewDecision)
+      mockGh([
+        { name: "lint", state: "SUCCESS", link: "", startedAt: "", completedAt: "" },
+      ]);
+      // 3. getPendingComments → empty array (no pending comments)
+      mockGh({ data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } });
+      // 4. getReviewDecision (gh pr view with reviewDecision)
       mockGh({ reviewDecision: "CHANGES_REQUESTED" });
 
       await lm.check("app-1");

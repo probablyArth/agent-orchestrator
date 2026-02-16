@@ -244,35 +244,30 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         const ciStatus = await scm.getCISummary(session.pr);
         if (ciStatus === CI_STATUS.FAILING) return "ci_failed";
 
-        // Check for new unresolved review comments
+        // Fetch pending comments once (cache for reuse)
+        let pendingComments: Awaited<ReturnType<typeof scm.getPendingComments>> | null = null;
         try {
-          const pendingComments = await scm.getPendingComments(session.pr);
+          pendingComments = await scm.getPendingComments(session.pr);
+        } catch {
+          // getPendingComments failed — will proceed without comment data
+        }
 
-          // Get previously seen comment IDs from metadata
-          const seenIdsStr = session.metadata?.["reviewCommentsSeen"] || "";
-          const seenIds = new Set(seenIdsStr.split(",").filter(Boolean));
+        // Check reviews
+        const reviewDecision = await scm.getReviewDecision(session.pr);
 
-          // Find new comments (not in seen set)
-          const newComments = pendingComments.filter((c) => !seenIds.has(c.id));
+        // changes_requested takes precedence over comment tracking
+        if (reviewDecision === "changes_requested") return "changes_requested";
 
-          if (newComments.length > 0) {
-            // Update seen set with new comment IDs
-            for (const comment of newComments) {
-              seenIds.add(comment.id);
-            }
-
-            // Persist updated seen IDs
-            updateMetadata(config.dataDir, session.id, {
-              reviewCommentsSeen: Array.from(seenIds).join(","),
-            });
-
+        // Check for unresolved review comments (if not changes_requested)
+        if (pendingComments !== null && Array.isArray(pendingComments)) {
+          // If there are ANY pending comments, stay in review_comments_unresolved
+          // (checkSession will detect new comments and trigger reactions)
+          if (pendingComments.length > 0) {
             return "review_comments_unresolved";
           }
 
-          // Check if all comments are now resolved
+          // All comments resolved — transition out of review_comments_unresolved
           if (session.status === "review_comments_unresolved" && pendingComments.length === 0) {
-            // Comments are resolved — transition back to appropriate state
-            const reviewDecision = await scm.getReviewDecision(session.pr);
             if (reviewDecision === "approved") {
               const mergeReady = await scm.getMergeability(session.pr);
               if (mergeReady.mergeable) return "mergeable";
@@ -280,26 +275,19 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
             }
             return "pr_open";
           }
-        } catch {
-          // getPendingComments failed — don't change status based on comments
         }
 
-        // Check reviews
-        const reviewDecision = await scm.getReviewDecision(session.pr);
-        if (reviewDecision === "changes_requested") return "changes_requested";
+        // Continue with normal review decision handling
         if (reviewDecision === "approved") {
-          // Check merge readiness
           const mergeReady = await scm.getMergeability(session.pr);
-
           if (mergeReady.mergeable) {
-            // Enhance mergeable check to include "no pending comments"
-            try {
-              const pendingComments = await scm.getPendingComments(session.pr);
-              if (pendingComments.length > 0) {
-                return "approved"; // Has pending comments → not truly mergeable
-              }
-            } catch {
-              // If comment check fails, fall through
+            // Enhance mergeable check: no pending comments required
+            if (
+              pendingComments !== null &&
+              Array.isArray(pendingComments) &&
+              pendingComments.length > 0
+            ) {
+              return "approved"; // Has pending comments → not truly mergeable
             }
             return "mergeable";
           }
@@ -549,6 +537,53 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     } else {
       // No transition but track current state
       states.set(session.id, newStatus);
+    }
+
+    // Special handling for review_comments_unresolved: check for new comments
+    // even when status hasn't changed (to trigger reactions for newly added comments)
+    if (newStatus === "review_comments_unresolved" && session.pr) {
+      const project = config.projects[session.projectId];
+      const scm = project?.scm ? registry.get<SCM>("scm", project.scm.plugin) : null;
+
+      if (scm) {
+        try {
+          const pendingComments = await scm.getPendingComments(session.pr);
+          const seenIdsStr = session.metadata?.["reviewCommentsSeen"] || "";
+          const seenIds = new Set(seenIdsStr.split(",").filter(Boolean));
+          const newComments = pendingComments.filter((c) => !seenIds.has(c.id));
+
+          // If there are new comments, trigger the reaction (even though status didn't change)
+          if (newComments.length > 0) {
+            const reactionKey = "review-comments";
+            const globalReaction = config.reactions[reactionKey];
+            const projectReaction = project?.reactions?.[reactionKey];
+            const reactionConfig = projectReaction
+              ? { ...globalReaction, ...projectReaction }
+              : globalReaction;
+
+            if (reactionConfig && reactionConfig.action) {
+              if (reactionConfig.auto !== false || reactionConfig.action === "notify") {
+                await executeReaction(
+                  session.id,
+                  session.projectId,
+                  reactionKey,
+                  reactionConfig as ReactionConfig,
+                );
+              }
+            }
+
+            // Mark comments as seen AFTER reaction fires
+            for (const comment of newComments) {
+              seenIds.add(comment.id);
+            }
+            updateMetadata(config.dataDir, session.id, {
+              reviewCommentsSeen: Array.from(seenIds).join(","),
+            });
+          }
+        } catch {
+          // Failed to check for new comments — ignore
+        }
+      }
     }
   }
 

@@ -636,7 +636,6 @@ export type EventType =
   | "review.changes_requested"
   | "review.comments_sent"
   | "review.comments_unresolved"
-  | "review.comments_unresolved"
   // Automated reviews
   | "automated_review.found"
   | "automated_review.fix_sent"
