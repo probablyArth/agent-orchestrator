@@ -196,6 +196,8 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
    * List all session files across all projects (or filtered by projectId).
    * In new architecture, scans project-specific directories.
    * In legacy, scans flat dataDir.
+   *
+   * Note: projectId is the config key (e.g., "test-project"), not the path basename.
    */
   function listAllSessions(projectIdFilter?: string): { sessionName: string; projectId: string }[] {
     const results: { sessionName: string; projectId: string }[] = [];
@@ -203,7 +205,8 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
     if (config.configPath) {
       // New architecture: scan each project's sessions directory
       for (const [projectKey, project] of Object.entries(config.projects)) {
-        const projectId = generateProjectId(project.path);
+        // Use config key as projectId for consistency with metadata
+        const projectId = projectKey;
 
         // Filter by project if specified
         if (projectIdFilter && projectId !== projectIdFilter) continue;
@@ -535,9 +538,8 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
     const sessions: Session[] = [];
 
     for (const { sessionName, projectId: sessionProjectId } of allSessions) {
-      const project = Object.values(config.projects).find(
-        (p) => generateProjectId(p.path) === sessionProjectId,
-      );
+      // Use config key to find project
+      const project = config.projects[sessionProjectId];
       if (!project) continue;
 
       const sessionsDir = getProjectSessionsDir(project);
