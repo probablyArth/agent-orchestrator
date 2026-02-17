@@ -128,11 +128,13 @@ async function spawnSession(
     // Get agent plugin (used for hooks and launch)
     const agent = getAgent(config, projectId);
 
+    // Calculate sessions directory once (used for hooks and metadata)
+    const sessionsDir = getSessionsDir(config.configPath, project.path);
+
     // Setup agent hooks for automatic metadata updates (before agent launch)
     spinner.text = "Configuring agent hooks";
     if (agent.setupWorkspaceHooks) {
       try {
-        const sessionsDir = getSessionsDir(config.configPath, project.path);
         await agent.setupWorkspaceHooks(worktreePath, {
           dataDir: sessionsDir,
           sessionId: sessionName,
@@ -151,9 +153,6 @@ async function spawnSession(
       issueId,
       permissions: project.agentConfig?.permissions,
     });
-
-    // Create tmux session
-    const sessionsDir = getSessionsDir(config.configPath, project.path);
     const envVar = `${prefix.toUpperCase().replace(/[^A-Z0-9_]/g, "_")}_SESSION`;
     const tmuxArgs = [
       "new-session",

@@ -182,26 +182,29 @@ function validateProjectUniqueness(config: OrchestratorConfig): void {
   const prefixes = new Set<string>();
   const prefixToProject: Record<string, string> = {};
 
-  for (const [_configKey, project] of Object.entries(config.projects)) {
+  for (const [configKey, project] of Object.entries(config.projects)) {
     const projectId = basename(project.path);
     const prefix = project.sessionPrefix || generateSessionPrefix(projectId);
 
     if (prefixes.has(prefix)) {
-      const firstProject = prefixToProject[prefix];
+      const firstProjectKey = prefixToProject[prefix];
+      const firstProject = config.projects[firstProjectKey];
       throw new Error(
         `Duplicate session prefix detected: "${prefix}"\n` +
-          `Projects "${firstProject}" and "${projectId}" would generate the same prefix.\n\n` +
+          `Projects "${firstProjectKey}" and "${configKey}" would generate the same prefix.\n\n` +
           `To fix this, add an explicit sessionPrefix to one of these projects:\n\n` +
           `projects:\n` +
-          `  - path: ${config.projects[firstProject]?.path}\n` +
+          `  ${firstProjectKey}:\n` +
+          `    path: ${firstProject?.path}\n` +
           `    sessionPrefix: ${prefix}1  # Add explicit prefix\n` +
-          `  - path: ${project.path}\n` +
+          `  ${configKey}:\n` +
+          `    path: ${project.path}\n` +
           `    sessionPrefix: ${prefix}2  # Add explicit prefix\n`,
       );
     }
 
     prefixes.add(prefix);
-    prefixToProject[prefix] = projectId;
+    prefixToProject[prefix] = configKey;
   }
 }
 
