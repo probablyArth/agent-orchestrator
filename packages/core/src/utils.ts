@@ -2,11 +2,7 @@
  * Shared utility functions for agent-orchestrator plugins.
  */
 
-import { execFile } from "node:child_process";
-import { stat } from "node:fs/promises";
-import { promisify } from "node:util";
-
-const execFileAsync = promisify(execFile);
+import { open, stat } from "node:fs/promises";
 
 /**
  * POSIX-safe shell escaping: wraps value in single quotes,
@@ -37,8 +33,50 @@ export function validateUrl(url: string, label: string): void {
 }
 
 /**
+ * Read the last line from a file by reading backwards from the end.
+ * Pure Node.js — no external binaries. Handles any file size.
+ */
+async function readLastLine(filePath: string): Promise<string | null> {
+  const CHUNK = 4096;
+  const fh = await open(filePath, "r");
+  try {
+    const { size } = await fh.stat();
+    if (size === 0) return null;
+
+    // Read backwards in chunks, accumulating bytes until we find a newline
+    const buf = Buffer.alloc(Math.min(CHUNK, size));
+    let tail = "";
+    let pos = size;
+
+    while (pos > 0) {
+      const readSize = Math.min(CHUNK, pos);
+      pos -= readSize;
+      await fh.read(buf, 0, readSize, pos);
+      tail = buf.toString("utf-8", 0, readSize) + tail;
+
+      // Find the last non-empty line
+      const lines = tail.split("\n");
+      // Walk from end to find a non-empty line
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const line = lines[i].trim();
+        if (line) {
+          // If i > 0, we have a complete line (there's a newline before it)
+          // If i === 0 and pos === 0, we've read the whole file — line is complete
+          // If i === 0 and pos > 0, the line may be truncated — keep reading
+          if (i > 0 || pos === 0) return line;
+        }
+      }
+    }
+
+    return tail.trim() || null;
+  } finally {
+    await fh.close();
+  }
+}
+
+/**
  * Read the last entry from a JSONL file.
- * Uses `tail -1` to get the last line — handles any file size, any line length.
+ * Reads backwards from end of file — pure Node.js, no external binaries.
  *
  * @param filePath - Path to the JSONL file
  * @returns Object containing the last entry's type and file mtime, or null if empty/invalid
@@ -47,15 +85,10 @@ export async function readLastJsonlEntry(
   filePath: string,
 ): Promise<{ lastType: string | null; modifiedAt: Date } | null> {
   try {
-    const [{ stdout }, fileStat] = await Promise.all([
-      execFileAsync("tail", ["-1", filePath], { timeout: 5_000 }),
-      stat(filePath),
-    ]);
+    const [line, fileStat] = await Promise.all([readLastLine(filePath), stat(filePath)]);
 
-    const line = stdout.trim();
     if (!line) return null;
 
-    // JSONL entries have deterministic structure: {"type":"<value>",...}
     const parsed: unknown = JSON.parse(line);
     if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
       const obj = parsed as Record<string, unknown>;

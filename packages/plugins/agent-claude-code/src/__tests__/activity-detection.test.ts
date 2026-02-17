@@ -311,7 +311,7 @@ describe("Claude Code Activity Detection", () => {
 
       it("returns null for JSONL with only whitespace", async () => {
         writeFileSync(join(projectDir, "whitespace-session.jsonl"), "\n\n  \n");
-        // tail -1 returns empty string after trim — readLastJsonlEntry returns null
+        // All lines are whitespace — readLastJsonlEntry returns null
         expect(await agent.getActivityState(makeSession())).toBeNull();
       });
 

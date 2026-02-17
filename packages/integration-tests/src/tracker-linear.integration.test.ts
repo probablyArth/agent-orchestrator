@@ -22,6 +22,7 @@ import { request } from "node:https";
 import type { ProjectConfig } from "@composio/ao-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import trackerLinear from "@composio/ao-plugin-tracker-linear";
+import { pollUntilEqual } from "./helpers/polling.js";
 
 // ---------------------------------------------------------------------------
 // Prerequisites
@@ -251,12 +252,11 @@ describe.skipIf(!canRun)("tracker-linear (integration)", () => {
     await tracker.updateIssue!(issueIdentifier, { state: "closed" }, project);
 
     // Linear API has eventual consistency — poll until the state propagates
-    let completed = false;
-    for (let attempt = 0; attempt < 5; attempt++) {
-      completed = await tracker.isCompleted(issueIdentifier, project);
-      if (completed) break;
-      await new Promise((r) => setTimeout(r, 500));
-    }
+    const completed = await pollUntilEqual(
+      () => tracker.isCompleted(issueIdentifier, project),
+      true,
+      { timeoutMs: 5_000, intervalMs: 500 },
+    );
     expect(completed).toBe(true);
 
     const issue = await tracker.getIssue(issueIdentifier, project);
@@ -267,12 +267,11 @@ describe.skipIf(!canRun)("tracker-linear (integration)", () => {
     await tracker.updateIssue!(issueIdentifier, { state: "open" }, project);
 
     // Linear API has eventual consistency — poll until the state propagates
-    let completed = true;
-    for (let attempt = 0; attempt < 5; attempt++) {
-      completed = await tracker.isCompleted(issueIdentifier, project);
-      if (!completed) break;
-      await new Promise((r) => setTimeout(r, 500));
-    }
+    const completed = await pollUntilEqual(
+      () => tracker.isCompleted(issueIdentifier, project),
+      false,
+      { timeoutMs: 5_000, intervalMs: 500 },
+    );
     expect(completed).toBe(false);
 
     const issue = await tracker.getIssue(issueIdentifier, project);
