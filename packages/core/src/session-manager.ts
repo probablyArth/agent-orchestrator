@@ -220,32 +220,35 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
     session: Session,
     plugins: ReturnType<typeof resolvePlugins>,
   ): Promise<void> {
-    if (!session.runtimeHandle) return;
-
-    if (plugins.runtime) {
+    // Check runtime liveness if we have a handle
+    if (session.runtimeHandle && plugins.runtime) {
       try {
         const alive = await plugins.runtime.isAlive(session.runtimeHandle);
         if (!alive) {
           session.status = "killed";
           session.activity = "exited";
-        } else if (plugins.agent) {
-          // Runtime is alive — detect activity using agent-native mechanism
-          try {
-            const detected = await plugins.agent.getActivityState(
-              session,
-              config.readyThresholdMs,
-            );
-            // Only overwrite if plugin returned a concrete state.
-            // null means "I don't have enough data" — keep existing value.
-            if (detected !== null) {
-              session.activity = detected;
-            }
-          } catch {
-            // Can't detect activity — keep existing value
-          }
+          return;
         }
       } catch {
-        // Can't check — assume still alive
+        // Can't check liveness — continue to activity detection
+      }
+    }
+
+    // Detect activity independently of runtime handle.
+    // Activity detection reads JSONL files on disk — it only needs workspacePath,
+    // not a runtime handle. Gating on runtimeHandle caused sessions created by
+    // external scripts (which don't store runtimeHandle) to always show "unknown".
+    if (plugins.agent) {
+      try {
+        const detected = await plugins.agent.getActivityState(
+          session,
+          config.readyThresholdMs,
+        );
+        if (detected !== null) {
+          session.activity = detected;
+        }
+      } catch {
+        // Can't detect activity — keep existing value
       }
     }
   }
@@ -517,11 +520,18 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
 
       const session = metadataToSession(sessionName, raw, createdAt, modifiedAt);
 
-      // Enrich with live runtime state and activity detection
-      if (session.runtimeHandle) {
-        const plugins = resolvePlugins(project);
-        await enrichSessionWithRuntimeState(session, plugins);
+      // Sessions created by external scripts don't store runtimeHandle —
+      // fall back to using session ID as tmux session name (same as sendMessage)
+      if (!session.runtimeHandle) {
+        session.runtimeHandle = {
+          id: sessionName,
+          runtimeName: project.runtime ?? config.defaults.runtime,
+          data: {},
+        };
       }
+
+      const plugins = resolvePlugins(project);
+      await enrichSessionWithRuntimeState(session, plugins);
 
       sessions.push(session);
     }
@@ -550,11 +560,18 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
 
       const session = metadataToSession(sessionId, raw, createdAt, modifiedAt);
 
-      // Enrich with live runtime state and activity detection
-      if (session.runtimeHandle) {
-        const plugins = resolvePlugins(project);
-        await enrichSessionWithRuntimeState(session, plugins);
+      // Sessions created by external scripts don't store runtimeHandle —
+      // fall back to using session ID as tmux session name (same as sendMessage)
+      if (!session.runtimeHandle) {
+        session.runtimeHandle = {
+          id: sessionId,
+          runtimeName: project.runtime ?? config.defaults.runtime,
+          data: {},
+        };
       }
+
+      const plugins = resolvePlugins(project);
+      await enrichSessionWithRuntimeState(session, plugins);
 
       return session;
     }
