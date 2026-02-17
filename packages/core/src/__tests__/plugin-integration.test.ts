@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
@@ -36,6 +36,7 @@ import { createPluginRegistry } from "../plugin-registry.js";
 import { createSessionManager } from "../session-manager.js";
 import { createLifecycleManager } from "../lifecycle-manager.js";
 import { writeMetadata } from "../metadata.js";
+import { getSessionsDir } from "../paths.js";
 import trackerGithub from "@composio/ao-plugin-tracker-github";
 import scmGithub from "@composio/ao-plugin-scm-github";
 import type {
@@ -54,7 +55,9 @@ import type {
 // Shared fixtures + helpers
 // ---------------------------------------------------------------------------
 
-let dataDir: string;
+let tmpDir: string;
+let configPath: string;
+let sessionsDir: string;
 let mockRuntime: Runtime;
 let mockAgent: Agent;
 let mockWorkspace: Workspace;
@@ -115,8 +118,12 @@ function makeSession(overrides: Partial<Session> = {}): Session {
 beforeEach(() => {
   vi.clearAllMocks();
 
-  dataDir = join(tmpdir(), `ao-test-plugin-int-${randomUUID()}`);
-  mkdirSync(dataDir, { recursive: true });
+  tmpDir = join(tmpdir(), `ao-test-plugin-int-${randomUUID()}`);
+  mkdirSync(tmpDir, { recursive: true });
+
+  // Create a temporary config file
+  configPath = join(tmpDir, "agent-orchestrator.yaml");
+  writeFileSync(configPath, "projects: {}\n");
 
   mockRuntime = {
     name: "mock",
@@ -151,8 +158,7 @@ beforeEach(() => {
   };
 
   config = {
-    dataDir,
-    worktreeDir: "/tmp/worktrees",
+    configPath,
     port: 3000,
     defaults: {
       runtime: "mock",
@@ -172,10 +178,14 @@ beforeEach(() => {
     },
     reactions: {},
   };
+
+  // Calculate sessions directory
+  sessionsDir = getSessionsDir(configPath, "/tmp/test-app");
+  mkdirSync(sessionsDir, { recursive: true });
 });
 
 afterEach(() => {
-  rmSync(dataDir, { recursive: true, force: true });
+  rmSync(tmpDir, { recursive: true, force: true });
 });
 
 // ---------------------------------------------------------------------------
@@ -298,7 +308,7 @@ describe("plugin integration", () => {
       const sm = createSessionManager({ config, registry });
 
       // Seed a session with an issueId but no PR
-      writeMetadata(dataDir, "app-1", {
+      writeMetadata(sessionsDir, "app-1", {
         worktree: "/tmp/mock-ws/app-1",
         branch: "feat/issue-99",
         status: "working",
@@ -325,7 +335,7 @@ describe("plugin integration", () => {
       const registry = createTestRegistry();
       const sm = createSessionManager({ config, registry });
 
-      writeMetadata(dataDir, "app-1", {
+      writeMetadata(sessionsDir, "app-1", {
         worktree: "/tmp/mock-ws/app-1",
         branch: "feat/issue-99",
         status: "working",
@@ -352,7 +362,7 @@ describe("plugin integration", () => {
 
       // metadataToSession extracts PR number from the URL tail (/42),
       // and owner/repo stay empty — scm-github receives exactly that.
-      writeMetadata(dataDir, "app-1", {
+      writeMetadata(sessionsDir, "app-1", {
         worktree: "/tmp/mock-ws/app-1",
         branch: "feat/issue-99",
         status: "working",
@@ -379,7 +389,7 @@ describe("plugin integration", () => {
       const registry = createTestRegistry();
       const sm = createSessionManager({ config, registry });
 
-      writeMetadata(dataDir, "app-1", {
+      writeMetadata(sessionsDir, "app-1", {
         worktree: "/tmp/mock-ws/app-1",
         branch: "feat/issue-99",
         status: "working",
@@ -410,7 +420,7 @@ describe("plugin integration", () => {
     function seedSession(overrides: Partial<Session> = {}): Session {
       const session = makeSession(overrides);
 
-      writeMetadata(dataDir, session.id, {
+      writeMetadata(sessionsDir, session.id, {
         worktree: session.workspacePath ?? "/tmp/test-app",
         branch: session.branch ?? "feat/issue-99",
         status: session.status,

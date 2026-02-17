@@ -275,41 +275,6 @@ describe("Config Validation - Session Prefix Regex", () => {
 });
 
 describe("Config Schema Validation", () => {
-  it("dataDir and worktreeDir are optional", () => {
-    const config = {
-      projects: {
-        proj1: {
-          path: "/repos/test",
-          repo: "org/test",
-          defaultBranch: "main",
-        },
-      },
-      // No dataDir or worktreeDir
-    };
-
-    const validated = validateConfig(config);
-    expect(validated.dataDir).toBeUndefined();
-    expect(validated.worktreeDir).toBeUndefined();
-  });
-
-  it("accepts legacy config with explicit dataDir and worktreeDir", () => {
-    const config = {
-      dataDir: "~/.agent-orchestrator",
-      worktreeDir: "~/.worktrees",
-      projects: {
-        proj1: {
-          path: "/repos/test",
-          repo: "org/test",
-          defaultBranch: "main",
-        },
-      },
-    };
-
-    const validated = validateConfig(config);
-    expect(validated.dataDir).toBeDefined();
-    expect(validated.worktreeDir).toBeDefined();
-  });
-
   it("requires projects field", () => {
     const config = {
       // No projects

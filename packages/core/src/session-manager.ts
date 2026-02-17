@@ -163,83 +163,49 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
 
   /**
    * Get the sessions directory for a project.
-   * Uses new hash-based structure if configPath is available, otherwise falls back to legacy dataDir.
    */
   function getProjectSessionsDir(project: ProjectConfig): string {
-    if (config.configPath) {
-      // New architecture: hash-based directory
-      return getSessionsDir(config.configPath, project.path);
-    } else if (config.dataDir) {
-      // Legacy: flat directory
-      return config.dataDir;
-    } else {
-      throw new Error("Neither configPath nor dataDir is set in config");
-    }
+    return getSessionsDir(config.configPath, project.path);
   }
 
   /**
    * Get the worktrees directory for a project.
    */
   function getProjectWorktreesDir(project: ProjectConfig): string {
-    if (config.configPath) {
-      // New architecture: hash-based directory
-      return getWorktreesDir(config.configPath, project.path);
-    } else if (config.worktreeDir) {
-      // Legacy: configured worktreeDir
-      return config.worktreeDir;
-    } else {
-      throw new Error("Neither configPath nor worktreeDir is set in config");
-    }
+    return getWorktreesDir(config.configPath, project.path);
   }
 
   /**
    * List all session files across all projects (or filtered by projectId).
-   * In new architecture, scans project-specific directories.
-   * In legacy, scans flat dataDir.
+   * Scans project-specific directories under ~/.agent-orchestrator/{hash}-{projectId}/sessions/
    *
    * Note: projectId is the config key (e.g., "test-project"), not the path basename.
    */
   function listAllSessions(projectIdFilter?: string): { sessionName: string; projectId: string }[] {
     const results: { sessionName: string; projectId: string }[] = [];
 
-    if (config.configPath) {
-      // New architecture: scan each project's sessions directory
-      for (const [projectKey, project] of Object.entries(config.projects)) {
-        // Use config key as projectId for consistency with metadata
-        const projectId = projectKey;
+    // Scan each project's sessions directory
+    for (const [projectKey, project] of Object.entries(config.projects)) {
+      // Use config key as projectId for consistency with metadata
+      const projectId = projectKey;
 
-        // Filter by project if specified
-        if (projectIdFilter && projectId !== projectIdFilter) continue;
+      // Filter by project if specified
+      if (projectIdFilter && projectId !== projectIdFilter) continue;
 
-        const sessionsDir = getSessionsDir(config.configPath, project.path);
-        if (!existsSync(sessionsDir)) continue;
+      const sessionsDir = getSessionsDir(config.configPath, project.path);
+      if (!existsSync(sessionsDir)) continue;
 
-        const files = readdirSync(sessionsDir);
-        for (const file of files) {
-          if (file === "archive" || file.startsWith(".")) continue;
-          const fullPath = join(sessionsDir, file);
-          try {
-            if (statSync(fullPath).isFile()) {
-              results.push({ sessionName: file, projectId });
-            }
-          } catch {
-            // Skip files that can't be stat'd
+      const files = readdirSync(sessionsDir);
+      for (const file of files) {
+        if (file === "archive" || file.startsWith(".")) continue;
+        const fullPath = join(sessionsDir, file);
+        try {
+          if (statSync(fullPath).isFile()) {
+            results.push({ sessionName: file, projectId });
           }
+        } catch {
+          // Skip files that can't be stat'd
         }
-      }
-    } else if (config.dataDir) {
-      // Legacy: scan flat directory and filter by project field in metadata
-      const sessionIds = listMetadata(config.dataDir);
-      for (const sid of sessionIds) {
-        const raw = readMetadataRaw(config.dataDir, sid);
-        if (!raw) continue;
-
-        const sessionProjectId = raw["project"] ?? "";
-
-        // Filter by project if specified
-        if (projectIdFilter && sessionProjectId !== projectIdFilter) continue;
-
-        results.push({ sessionName: sid, projectId: sessionProjectId });
       }
     }
 

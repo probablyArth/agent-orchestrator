@@ -19,6 +19,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createSessionManager, createPluginRegistry, type OrchestratorConfig } from "@composio/ao-core";
+import { writeMetadata } from "@composio/ao-cli/src/lib/metadata.js";
 import {
   isTmuxAvailable,
   killSessionsByPrefix,

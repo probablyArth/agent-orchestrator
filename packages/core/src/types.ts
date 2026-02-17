@@ -708,20 +708,9 @@ export interface OrchestratorConfig {
   /**
    * Path to the config file (set automatically during load).
    * Used for hash-based directory structure.
+   * All paths are auto-derived from this location.
    */
-  configPath?: string;
-
-  /**
-   * @deprecated Legacy field. In new architecture, dataDir is auto-derived from config location.
-   * Format: ~/.agent-orchestrator/{hash}-{projectId}/sessions/
-   */
-  dataDir?: string;
-
-  /**
-   * @deprecated Legacy field. In new architecture, worktreeDir is auto-derived.
-   * Format: ~/.agent-orchestrator/{hash}-{projectId}/worktrees/
-   */
-  worktreeDir?: string;
+  configPath: string;
 
   /** Web dashboard port */
   port: number;

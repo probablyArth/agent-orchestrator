@@ -55,13 +55,7 @@ function extractPluginConfig(
   name: string,
   config: OrchestratorConfig,
 ): Record<string, unknown> | undefined {
-  // Map well-known orchestrator config fields to plugin config
-  if (slot === "workspace" && name === "worktree" && config.worktreeDir) {
-    return { worktreeDir: config.worktreeDir };
-  }
-  if (slot === "workspace" && name === "clone" && config.worktreeDir) {
-    return { cloneDir: config.worktreeDir };
-  }
+  // Reserved for future plugin-specific config mapping
   return undefined;
 }
 

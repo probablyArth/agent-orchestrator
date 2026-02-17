@@ -89,12 +89,6 @@ const DefaultPluginsSchema = z.object({
 });
 
 const OrchestratorConfigSchema = z.object({
-  /**
-   * @deprecated Legacy fields for backwards compatibility.
-   * New architecture auto-derives paths from config location.
-   */
-  dataDir: z.string().optional(),
-  worktreeDir: z.string().optional(),
   port: z.number().default(3000),
   defaults: DefaultPluginsSchema.default({}),
   projects: z.record(ProjectConfigSchema),
@@ -122,14 +116,6 @@ function expandHome(filepath: string): string {
 
 /** Expand all path fields in the config */
 function expandPaths(config: OrchestratorConfig): OrchestratorConfig {
-  // Only expand dataDir/worktreeDir if they're explicitly set (legacy configs)
-  if (config.dataDir) {
-    config.dataDir = expandHome(config.dataDir);
-  }
-  if (config.worktreeDir) {
-    config.worktreeDir = expandHome(config.worktreeDir);
-  }
-
   for (const project of Object.values(config.projects)) {
     project.path = expandHome(project.path);
   }

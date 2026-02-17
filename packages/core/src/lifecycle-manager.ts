@@ -428,12 +428,8 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         (p) => generateProjectId(p.path) === session.projectId,
       );
       if (project) {
-        const sessionsDir = config.configPath
-          ? getSessionsDir(config.configPath, project.path)
-          : config.dataDir;
-        if (sessionsDir) {
-          updateMetadata(sessionsDir, session.id, { status: newStatus });
-        }
+        const sessionsDir = getSessionsDir(config.configPath, project.path);
+        updateMetadata(sessionsDir, session.id, { status: newStatus });
       }
 
       // Reset allCompleteEmitted when any session becomes active again
