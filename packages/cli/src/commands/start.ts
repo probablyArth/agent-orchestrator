@@ -149,23 +149,37 @@ function startDashboard(port: number, webDir: string, configPath: string): Child
 }
 
 /**
- * Stop dashboard server.
- * Uses lsof to find the process listening on the port, then kills it.
+ * Stop dashboard server and its WebSocket servers.
+ * Uses lsof to find processes listening on dashboard and WebSocket ports, then kills them.
  * Best effort — if it fails, just warn the user.
  */
 async function stopDashboard(port: number): Promise<void> {
   try {
-    // Find PIDs listening on the port (can be multiple: parent + children)
-    const { stdout } = await exec("lsof", ["-ti", `:${port}`]);
-    const pids = stdout
-      .trim()
-      .split("\n")
-      .filter((p) => p.length > 0);
+    // Kill processes on all dashboard-related ports:
+    // - Dashboard port (Next.js)
+    // - Port 3001 (terminal WebSocket)
+    // - Port 3003 (direct terminal WebSocket)
+    const ports = [port, 3001, 3003];
+    const allPids: string[] = [];
 
-    if (pids.length > 0) {
-      // Kill all processes (pass PIDs as separate arguments)
-      await exec("kill", pids);
-      console.log(chalk.green("Dashboard stopped"));
+    for (const p of ports) {
+      try {
+        const { stdout } = await exec("lsof", ["-ti", `:${p}`]);
+        const pids = stdout
+          .trim()
+          .split("\n")
+          .filter((pid) => pid.length > 0);
+        allPids.push(...pids);
+      } catch {
+        // Port not in use, continue
+      }
+    }
+
+    if (allPids.length > 0) {
+      // Deduplicate PIDs (in case parent process is found on multiple ports)
+      const uniquePids = [...new Set(allPids)];
+      await exec("kill", uniquePids);
+      console.log(chalk.green("Dashboard and WebSocket servers stopped"));
     } else {
       console.log(chalk.yellow(`Dashboard not running on port ${port}`));
     }
@@ -237,6 +251,15 @@ export function registerStart(program: Command): void {
                   `Orchestrator session "${sessionId}" is already running (skipping creation)`,
                 ),
               );
+
+              // Update metadata with current dashboard port
+              const existingMetadata = readMetadata(config.dataDir, sessionId);
+              if (existingMetadata) {
+                writeMetadata(config.dataDir, sessionId, {
+                  ...existingMetadata,
+                  dashboardPort: port,
+                });
+              }
             } else {
               try {
                 // Ensure CLAUDE.orchestrator.md exists

@@ -34,9 +34,17 @@ export function registerDashboard(program: Command): void {
         process.exit(1);
       }
 
+      // Resolve config file path and pass via AO_CONFIG_PATH
+      const configPath = config.__configPath;
+      const env = { ...process.env };
+      if (configPath) {
+        env["AO_CONFIG_PATH"] = configPath;
+      }
+
       const child = spawn("npx", ["next", "dev", "-p", String(port)], {
         cwd: webDir,
         stdio: "inherit",
+        env,
       });
 
       child.on("error", (err) => {

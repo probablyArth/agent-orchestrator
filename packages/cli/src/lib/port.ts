@@ -12,6 +12,7 @@ export function isPortAvailable(port: number): Promise<boolean> {
     const server = createServer();
 
     server.once("error", () => {
+      server.close();
       resolve(false);
     });
 
