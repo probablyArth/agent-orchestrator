@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  onboarding-test:
+    build:
+      context: ../..
+      dockerfile: tests/integration/Dockerfile
+    container_name: ao-onboarding-test
+    command: /workspace/agent-orchestrator/tests/integration/onboarding-test.sh
+    environment:
+      - NODE_ENV=test
+      - CI=true
+    # Mount the repo for live development (optional)
+    volumes:
+      - ../..:/workspace/agent-orchestrator
+    # Expose ports for debugging (optional)
+    ports:
+      - "4000:4000"
+      - "3003:3003"
+    # Increase shared memory for browser-based tests (future)
+    shm_size: 2gb
