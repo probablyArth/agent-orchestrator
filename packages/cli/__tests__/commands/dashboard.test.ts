@@ -3,29 +3,32 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "node:
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-const { mockExec, mockConfigRef } = vi.hoisted(() => ({
+const { mockExec, mockExecSilent } = vi.hoisted(() => ({
   mockExec: vi.fn(),
-  mockConfigRef: { current: null as Record<string, unknown> | null },
+  mockExecSilent: vi.fn(),
 }));
 
 vi.mock("../../src/lib/shell.js", () => ({
   exec: mockExec,
+  execSilent: mockExecSilent,
 }));
 
-vi.mock("@composio/ao-core", async (importOriginal) => {
-  // eslint-disable-next-line @typescript-eslint/consistent-type-imports
-  const actual = await importOriginal<typeof import("@composio/ao-core")>();
-  return {
-    ...actual,
-    loadConfig: () => mockConfigRef.current,
-  };
-});
+vi.mock("ora", () => ({
+  default: () => ({
+    start: vi.fn().mockReturnThis(),
+    stop: vi.fn().mockReturnThis(),
+    succeed: vi.fn().mockReturnThis(),
+    fail: vi.fn().mockReturnThis(),
+    text: "",
+  }),
+}));
 
 let tmpDir: string;
 
 beforeEach(() => {
   tmpDir = mkdtempSync(join(tmpdir(), "ao-dashboard-test-"));
   mockExec.mockReset();
+  mockExecSilent.mockReset();
   mockExec.mockResolvedValue({ stdout: "", stderr: "" });
 });
 
@@ -34,16 +37,8 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("looksLikeStaleBuild (dashboard stale cache detection)", () => {
-  // The dashboard 500 error bug: when .next cache references modules that
-  // no longer exist after a dependency change (e.g., vendor-chunks/xterm@5.3.0.js),
-  // the dashboard crashes. We detect this pattern and suggest --rebuild.
-
-  // We test the detection function indirectly by importing the module.
-  // Since looksLikeStaleBuild is not exported, we test it via the dashboard-rebuild module.
-
-  it("rebuildDashboard cleans .next directory", async () => {
-    // Create a fake web dir with a .next cache
+describe("cleanNextCache", () => {
+  it("deletes .next directory when it exists", async () => {
     const webDir = join(tmpDir, "web");
     mkdirSync(webDir, { recursive: true });
     mkdirSync(join(webDir, ".next", "server", "vendor-chunks"), { recursive: true });
@@ -52,28 +47,87 @@ describe("looksLikeStaleBuild (dashboard stale cache detection)", () => {
       "module.exports = {}",
     );
 
-    // Import the rebuild function
-    const { rebuildDashboard } = await import("../../src/lib/dashboard-rebuild.js");
+    const { cleanNextCache } = await import("../../src/lib/dashboard-rebuild.js");
 
-    // Mock ora
-    vi.mock("ora", () => ({
-      default: () => ({
-        start: vi.fn().mockReturnThis(),
-        stop: vi.fn().mockReturnThis(),
-        succeed: vi.fn().mockReturnThis(),
-        fail: vi.fn().mockReturnThis(),
-        text: "",
-      }),
-    }));
-
-    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-
-    await rebuildDashboard(webDir);
+    await cleanNextCache(webDir);
 
     // .next should be gone — this is the fix for the stale cache 500 error
     expect(existsSync(join(webDir, ".next"))).toBe(false);
+  });
 
-    consoleSpy.mockRestore();
+  it("is a no-op when .next does not exist", async () => {
+    const webDir = join(tmpDir, "web");
+    mkdirSync(webDir, { recursive: true });
+
+    const { cleanNextCache } = await import("../../src/lib/dashboard-rebuild.js");
+
+    // Should not throw
+    await cleanNextCache(webDir);
+
+    expect(existsSync(join(webDir, ".next"))).toBe(false);
+  });
+});
+
+describe("findRunningDashboardPid", () => {
+  it("returns PID when a process is listening", async () => {
+    mockExecSilent.mockResolvedValue("12345");
+
+    const { findRunningDashboardPid } = await import("../../src/lib/dashboard-rebuild.js");
+
+    const pid = await findRunningDashboardPid(3000);
+    expect(pid).toBe("12345");
+    expect(mockExecSilent).toHaveBeenCalledWith("lsof", ["-ti", ":3000", "-sTCP:LISTEN"]);
+  });
+
+  it("returns null when no process is listening", async () => {
+    mockExecSilent.mockResolvedValue(null);
+
+    const { findRunningDashboardPid } = await import("../../src/lib/dashboard-rebuild.js");
+
+    const pid = await findRunningDashboardPid(3000);
+    expect(pid).toBeNull();
+  });
+});
+
+describe("findProcessWebDir", () => {
+  it("extracts cwd from lsof output", async () => {
+    const webDir = join(tmpDir, "web");
+    mkdirSync(webDir, { recursive: true });
+    writeFileSync(join(webDir, "package.json"), "{}");
+
+    // Simulate lsof -p <pid> -Fn output
+    mockExecSilent.mockResolvedValue(
+      `p12345\nfcwd\nn${webDir}\nftxt\nn/usr/bin/node`,
+    );
+
+    const { findProcessWebDir } = await import("../../src/lib/dashboard-rebuild.js");
+
+    const result = await findProcessWebDir("12345");
+    expect(result).toBe(webDir);
+  });
+
+  it("returns null when cwd has no package.json", async () => {
+    const webDir = join(tmpDir, "web");
+    mkdirSync(webDir, { recursive: true });
+    // No package.json
+
+    mockExecSilent.mockResolvedValue(
+      `p12345\nfcwd\nn${webDir}\nftxt\nn/usr/bin/node`,
+    );
+
+    const { findProcessWebDir } = await import("../../src/lib/dashboard-rebuild.js");
+
+    const result = await findProcessWebDir("12345");
+    expect(result).toBeNull();
+  });
+
+  it("returns null when lsof fails", async () => {
+    mockExecSilent.mockResolvedValue(null);
+
+    const { findProcessWebDir } = await import("../../src/lib/dashboard-rebuild.js");
+
+    const result = await findProcessWebDir("12345");
+    expect(result).toBeNull();
   });
 });
 

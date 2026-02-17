@@ -5,7 +5,7 @@ import chalk from "chalk";
 import type { Command } from "commander";
 import { loadConfig } from "@composio/ao-core";
 import { findWebDir } from "../lib/web-dir.js";
-import { rebuildDashboard } from "../lib/dashboard-rebuild.js";
+import { cleanNextCache, findRunningDashboardPid, findProcessWebDir, waitForPortFree } from "../lib/dashboard-rebuild.js";
 
 export function registerDashboard(program: Command): void {
   program
@@ -23,9 +23,9 @@ export function registerDashboard(program: Command): void {
         process.exit(1);
       }
 
-      const webDir = findWebDir();
+      const localWebDir = findWebDir();
 
-      if (!existsSync(resolve(webDir, "package.json"))) {
+      if (!existsSync(resolve(localWebDir, "package.json"))) {
         console.error(
           chalk.red(
             "Could not find @composio/ao-web package.\n" + "Ensure it is installed: pnpm install",
@@ -35,8 +35,26 @@ export function registerDashboard(program: Command): void {
       }
 
       if (opts.rebuild) {
-        await rebuildDashboard(webDir);
+        // Check if a dashboard is already running on this port.
+        const runningPid = await findRunningDashboardPid(port);
+        const runningWebDir = runningPid ? await findProcessWebDir(runningPid) : null;
+        const targetWebDir = runningWebDir ?? localWebDir;
+
+        if (runningPid) {
+          // Kill the running server, clean .next, then start fresh below.
+          console.log(
+            chalk.dim(`Stopping dashboard (PID ${runningPid}) on port ${port}...`),
+          );
+          process.kill(parseInt(runningPid, 10), "SIGTERM");
+          // Wait for port to be released
+          await waitForPortFree(port, 5000);
+        }
+
+        await cleanNextCache(targetWebDir);
+        // Fall through to start the dashboard on this port.
       }
+
+      const webDir = localWebDir;
 
       console.log(chalk.bold(`Starting dashboard on http://localhost:${port}\n`));
 

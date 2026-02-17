@@ -27,7 +27,7 @@ import {
 import { exec, getTmuxSessions } from "../lib/shell.js";
 import { getAgent } from "../lib/plugins.js";
 import { findWebDir } from "../lib/web-dir.js";
-import { rebuildDashboard } from "../lib/dashboard-rebuild.js";
+import { cleanNextCache } from "../lib/dashboard-rebuild.js";
 
 /**
  * Resolve project from config.
@@ -149,7 +149,7 @@ export function registerStart(program: Command): void {
             }
 
             if (opts?.rebuild) {
-              await rebuildDashboard(webDir);
+              await cleanNextCache(webDir);
             }
 
             spinner.start("Starting dashboard");
