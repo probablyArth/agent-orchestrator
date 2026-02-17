@@ -124,7 +124,7 @@ beforeEach(() => {
       "my-app": {
         name: "My App",
         repo: "org/my-app",
-        path: "/tmp/my-app",
+        path: join(tmpDir, "my-app"),
         defaultBranch: "main",
         sessionPrefix: "app",
         scm: { plugin: "github" },
@@ -141,7 +141,7 @@ beforeEach(() => {
   };
 
   // Calculate sessions directory
-  sessionsDir = getSessionsDir(configPath, "/tmp/my-app");
+  sessionsDir = getSessionsDir(configPath, join(tmpDir, "my-app"));
   mkdirSync(sessionsDir, { recursive: true });
 });
 
