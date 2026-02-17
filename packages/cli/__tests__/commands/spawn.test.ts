@@ -41,10 +41,10 @@ vi.mock("ora", () => ({
 }));
 
 vi.mock("@composio/ao-core", async (importOriginal) => {
-  const actual: Record<string, unknown> = await importOriginal();
+  const actual = await importOriginal<typeof import("@composio/ao-core")>();
   return {
+    ...actual,
     loadConfig: () => mockConfigRef.current,
-    buildPrompt: actual["buildPrompt"],
     tmuxSendKeys: vi.fn().mockResolvedValue(undefined),
   };
 });
@@ -65,9 +65,11 @@ let consoleSpy: ReturnType<typeof vi.spyOn>;
 beforeEach(() => {
   tmpDir = mkdtempSync(join(tmpdir(), "ao-spawn-test-"));
 
+  const configPath = join(tmpDir, "agent-orchestrator.yaml");
+  writeFileSync(configPath, "projects: {}");
+
   mockConfigRef.current = {
-    dataDir: tmpDir,
-    worktreeDir: join(tmpDir, "worktrees"),
+    configPath,
     port: 3000,
     defaults: {
       runtime: "tmux",

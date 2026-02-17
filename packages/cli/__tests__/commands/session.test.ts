@@ -30,9 +30,13 @@ vi.mock("../../src/lib/shell.js", () => ({
   },
 }));
 
-vi.mock("@composio/ao-core", () => ({
-  loadConfig: () => mockConfigRef.current,
-}));
+vi.mock("@composio/ao-core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@composio/ao-core")>();
+  return {
+    ...actual,
+    loadConfig: () => mockConfigRef.current,
+  };
+});
 
 let tmpDir: string;
 
@@ -45,9 +49,11 @@ let consoleSpy: ReturnType<typeof vi.spyOn>;
 beforeEach(() => {
   tmpDir = mkdtempSync(join(tmpdir(), "ao-session-test-"));
 
+  const configPath = join(tmpDir, "agent-orchestrator.yaml");
+  writeFileSync(configPath, "projects: {}");
+
   mockConfigRef.current = {
-    dataDir: tmpDir,
-    worktreeDir: join(tmpDir, "worktrees"),
+    configPath,
     port: 3000,
     defaults: {
       runtime: "tmux",
