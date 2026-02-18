@@ -99,6 +99,18 @@ export function Dashboard({ sessions, stats, orchestratorId, projectName }: Dash
               orchestrator terminal
             </a>
           )}
+          <a
+            href="/logs"
+            className="rounded-md border border-[var(--color-border-default)] px-3 py-1 text-[11px] text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-accent-blue)] hover:text-[var(--color-accent-blue)]"
+          >
+            logs
+          </a>
+          <a
+            href="/perf"
+            className="rounded-md border border-[var(--color-border-default)] px-3 py-1 text-[11px] text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-accent-blue)] hover:text-[var(--color-accent-blue)]"
+          >
+            perf
+          </a>
           <ClientTimestamp />
         </div>
       </div>

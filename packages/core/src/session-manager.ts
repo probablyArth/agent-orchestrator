@@ -51,6 +51,7 @@ import { buildPrompt } from "./prompt-builder.js";
 import {
   getSessionsDir,
   getProjectBaseDir,
+  getLogsDir,
   generateTmuxName,
   generateConfigHash,
   validateAndStoreOrigin,
@@ -438,6 +439,11 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
       const launchCommand = plugins.agent.getLaunchCommand(agentLaunchConfig);
       const environment = plugins.agent.getEnvironment(agentLaunchConfig);
 
+      // Resolve log directory for the project
+      const logDir = config.configPath
+        ? getLogsDir(config.configPath, project.path)
+        : undefined;
+
       handle = await plugins.runtime.create({
         sessionId: tmuxName ?? sessionId, // Use tmux name for runtime if available
         workspacePath,
@@ -447,6 +453,8 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
           AO_SESSION: sessionId,
           AO_DATA_DIR: sessionsDir, // Pass sessions directory (not root dataDir)
           AO_SESSION_NAME: sessionId, // User-facing session name
+          AO_PROJECT_ID: spawnConfig.projectId,
+          ...(logDir && { AO_LOG_DIR: logDir }),
           ...(tmuxName && { AO_TMUX_NAME: tmuxName }), // Tmux session name if using new arch
         },
       });
