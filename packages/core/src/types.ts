@@ -1042,15 +1042,6 @@ export interface EventLogger {
 }
 
 /**
- * Event log reader — queries structured log entries.
- * Implement this interface to read logs from a custom backend.
- */
-export interface EventLogReader {
-  query(opts?: LogQueryOptions): LogEntry[];
-  tail(lines: number): LogEntry[];
-}
-
-/**
  * Retrospective store — saves and loads session retrospectives.
  * Implement this interface to store retrospectives in a database,
  * cloud storage, or other backend instead of the default JSON files.

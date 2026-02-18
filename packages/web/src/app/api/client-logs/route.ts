@@ -1,13 +1,5 @@
 import { NextResponse } from "next/server";
-import { getLogsDir, LogWriter, loadConfig } from "@composio/ao-core";
-
-interface ClientLogEntry {
-  level: "info" | "warn" | "error";
-  message: string;
-  url?: string;
-  stack?: string;
-  timing?: Record<string, number>;
-}
+import { resolveProjectLogDir, LogWriter, loadConfig } from "@composio/ao-core";
 
 let logWriter: LogWriter | null = null;
 
@@ -15,11 +7,8 @@ function getLogWriter(): LogWriter | null {
   if (logWriter) return logWriter;
 
   try {
-    const config = loadConfig();
-    const projectId = Object.keys(config.projects)[0];
-    if (!projectId) return null;
-    const project = config.projects[projectId];
-    const logDir = getLogsDir(config.configPath, project.path);
+    const logDir = resolveProjectLogDir(loadConfig());
+    if (!logDir) return null;
     logWriter = new LogWriter({ filePath: `${logDir}/browser.jsonl` });
     return logWriter;
   } catch {
@@ -27,11 +16,34 @@ function getLogWriter(): LogWriter | null {
   }
 }
 
+const VALID_LEVELS = new Set(["info", "warn", "error"]);
+
+function isValidEntry(entry: unknown): entry is {
+  level: "info" | "warn" | "error";
+  message: string;
+  url?: string;
+  stack?: string;
+  timing?: Record<string, number>;
+} {
+  if (typeof entry !== "object" || entry === null) return false;
+  const obj = entry as Record<string, unknown>;
+  return (
+    typeof obj["message"] === "string" &&
+    typeof obj["level"] === "string" &&
+    VALID_LEVELS.has(obj["level"])
+  );
+}
+
 /** POST /api/client-logs — Ingest batched browser-side log entries. */
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as { entries?: ClientLogEntry[] };
-    if (!body.entries || !Array.isArray(body.entries)) {
+    const body: unknown = await request.json();
+    if (typeof body !== "object" || body === null) {
+      return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+    }
+
+    const { entries } = body as Record<string, unknown>;
+    if (!Array.isArray(entries)) {
       return NextResponse.json({ error: "Missing entries array" }, { status: 400 });
     }
 
@@ -40,11 +52,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, logged: 0 });
     }
 
-    for (const entry of body.entries) {
-      const level = entry.level === "error" ? "error" : entry.level === "warn" ? "warn" : "info";
+    let logged = 0;
+    for (const entry of entries) {
+      if (!isValidEntry(entry)) continue;
       writer.append({
         ts: new Date().toISOString(),
-        level,
+        level: entry.level,
         source: "browser",
         sessionId: null,
         message: entry.message,
@@ -54,9 +67,10 @@ export async function POST(request: Request) {
           ...(entry.timing && { timing: entry.timing }),
         },
       });
+      logged++;
     }
 
-    return NextResponse.json({ ok: true, logged: body.entries.length });
+    return NextResponse.json({ ok: true, logged });
   } catch {
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   }

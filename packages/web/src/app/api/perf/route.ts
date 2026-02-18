@@ -1,22 +1,16 @@
 import { NextResponse } from "next/server";
-import { resolveProjectLogDir, readLogsFromDir, loadConfig } from "@composio/ao-core";
+import {
+  resolveProjectLogDir,
+  readLogsFromDir,
+  loadConfig,
+  percentile,
+  normalizeRoutePath,
+} from "@composio/ao-core";
 
 function resolveLogDir(): string {
   const dir = resolveProjectLogDir(loadConfig());
   if (!dir) throw new Error("No projects configured.");
   return dir;
-}
-
-function percentile(sorted: number[], p: number): number {
-  if (sorted.length === 0) return 0;
-  const idx = Math.ceil((p / 100) * sorted.length) - 1;
-  return sorted[Math.max(0, idx)];
-}
-
-function normalizePath(path: string): string {
-  return path
-    .replace(/\/sessions\/[^/]+/g, "/sessions/:id")
-    .replace(/\/prs\/[^/]+/g, "/prs/:id");
 }
 
 /**
@@ -61,7 +55,7 @@ export async function GET(request: Request) {
 
       if (route && !path.includes(route)) continue;
 
-      const key = `${method} ${normalizePath(path)}`;
+      const key = `${method} ${normalizeRoutePath(path)}`;
       const durations = byRoute.get(key) ?? [];
       durations.push(durationMs);
       byRoute.set(key, durations);
@@ -74,11 +68,7 @@ export async function GET(request: Request) {
         latestCacheStats = data["cacheStats"];
       }
 
-      slowest.push({
-        ts: entry.ts,
-        method,
-        path,
-        durationMs,
+      slowest.push({ ts: entry.ts, method, path, durationMs,
         timings: data["timings"] as Record<string, number> | undefined,
       });
     }

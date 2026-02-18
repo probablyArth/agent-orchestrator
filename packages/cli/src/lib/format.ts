@@ -104,6 +104,12 @@ export function activityIcon(activity: ActivityState | null): string {
   }
 }
 
+/** Format milliseconds as human-readable duration. */
+export function formatMs(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
 /** Parse a relative time string like "5m", "1h", "30s", "2d" into a Date. Also accepts ISO 8601. */
 export function parseSinceArg(since: string): Date {
   const match = since.match(/^(\d+)(s|m|h|d)$/);

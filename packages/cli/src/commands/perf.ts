@@ -11,72 +11,9 @@
 
 import chalk from "chalk";
 import type { Command } from "commander";
-import { loadConfig, resolveProjectLogDir, readLogsFromDir } from "@composio/ao-core";
-import { padCol, parseSinceArg } from "../lib/format.js";
-
-function resolveLogDir(): string {
-  const config = loadConfig();
-  const dir = resolveProjectLogDir(config);
-  if (!dir) throw new Error("No projects configured.");
-  return dir;
-}
-
-interface ParsedRequest {
-  ts: string;
-  method: string;
-  path: string;
-  statusCode: number;
-  durationMs: number;
-  error?: string;
-  timings?: Record<string, number>;
-  cacheStats?: { hits: number; misses: number; hitRate: number; size: number };
-}
-
-function loadRequests(logDir: string, opts?: { since?: Date; route?: string }): ParsedRequest[] {
-  const entries = readLogsFromDir(logDir, "api", {
-    source: "api",
-    since: opts?.since,
-  });
-
-  const requests: ParsedRequest[] = [];
-  for (const entry of entries) {
-    const data = entry.data ?? {};
-    if (!data["method"] || !data["path"]) continue;
-
-    const req: ParsedRequest = {
-      ts: entry.ts,
-      method: String(data["method"]),
-      path: String(data["path"]),
-      statusCode: Number(data["statusCode"]) || 0,
-      durationMs: Number(data["durationMs"]) || 0,
-      error: data["error"] ? String(data["error"]) : undefined,
-      timings: data["timings"] as Record<string, number> | undefined,
-      cacheStats: data["cacheStats"] as ParsedRequest["cacheStats"] | undefined,
-    };
-
-    if (opts?.route && !req.path.includes(opts.route)) continue;
-    requests.push(req);
-  }
-
-  return requests;
-}
-
-function percentile(sorted: number[], p: number): number {
-  if (sorted.length === 0) return 0;
-  const idx = Math.ceil((p / 100) * sorted.length) - 1;
-  return sorted[Math.max(0, idx)];
-}
-
-function normalizePath(path: string): string {
-  return path
-    .replace(/\/sessions\/[^/]+/g, "/sessions/:id")
-    .replace(/\/prs\/[^/]+/g, "/prs/:id");
-}
-
-function formatMs(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(1)}s`;
-}
+import { percentile, normalizeRoutePath } from "@composio/ao-core";
+import { padCol, parseSinceArg, formatMs } from "../lib/format.js";
+import { loadRequests, resolveLogDir, type ParsedRequest } from "../lib/perf-utils.js";
 
 export function registerPerf(program: Command): void {
   const perfCmd = program
@@ -104,7 +41,7 @@ export function registerPerf(program: Command): void {
         const byRoute = new Map<string, number[]>();
         const errorsByRoute = new Map<string, number>();
         for (const req of requests) {
-          const key = `${req.method} ${normalizePath(req.path)}`;
+          const key = `${req.method} ${normalizeRoutePath(req.path)}`;
           const durations = byRoute.get(key) ?? [];
           durations.push(req.durationMs);
           byRoute.set(key, durations);

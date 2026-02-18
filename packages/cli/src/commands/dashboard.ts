@@ -15,7 +15,6 @@ import chalk from "chalk";
 import type { Command } from "commander";
 import {
   loadConfig,
-  resolveProjectLogDir,
   LogWriter,
   readLogs,
   tailLogs,
@@ -32,10 +31,12 @@ import {
   waitForPortFree,
 } from "../lib/dashboard-rebuild.js";
 import { formatAge, parseSinceArg } from "../lib/format.js";
+import { resolveLogDir as resolveLogDirStrict } from "../lib/perf-utils.js";
 
+/** Nullable variant — dashboard degrades gracefully when no project is configured. */
 function resolveLogDir(): string | null {
   try {
-    return resolveProjectLogDir(loadConfig());
+    return resolveLogDirStrict();
   } catch {
     return null;
   }

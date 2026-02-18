@@ -11,8 +11,6 @@ import { join } from "node:path";
 import chalk from "chalk";
 import type { Command } from "commander";
 import {
-  loadConfig,
-  resolveProjectLogDir,
   readLogs,
   readLogsFromDir,
   tailLogs,
@@ -20,6 +18,7 @@ import {
   type LogQueryOptions,
 } from "@composio/ao-core";
 import { parseSinceArg } from "../lib/format.js";
+import { resolveLogDir } from "../lib/perf-utils.js";
 
 /** Format a log entry for terminal display. */
 function formatLogEntry(entry: LogEntry): string {
@@ -38,13 +37,6 @@ function colorLevel(level: LogEntry["level"]): string {
     case "stdout": return chalk.dim("out");
     case "info": return chalk.blue("inf");
   }
-}
-
-function resolveLogDir(): string {
-  const config = loadConfig();
-  const dir = resolveProjectLogDir(config);
-  if (!dir) throw new Error("No projects configured.");
-  return dir;
 }
 
 export function registerLogs(program: Command): void {
