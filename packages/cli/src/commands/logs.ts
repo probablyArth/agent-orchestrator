@@ -19,25 +19,7 @@ import {
   type LogEntry,
   type LogQueryOptions,
 } from "@composio/ao-core";
-
-/** Parse a relative time string like "5m", "1h", "30s" into a Date. */
-function parseSinceArg(since: string): Date {
-  const match = since.match(/^(\d+)(s|m|h|d)$/);
-  if (!match) {
-    // Try ISO 8601
-    const d = new Date(since);
-    if (!isNaN(d.getTime())) return d;
-    throw new Error(`Invalid time format: "${since}". Use "5m", "1h", "30s", or ISO 8601.`);
-  }
-  const value = parseInt(match[1], 10);
-  const unit = match[2];
-  const ms =
-    unit === "s" ? value * 1000 :
-    unit === "m" ? value * 60_000 :
-    unit === "h" ? value * 3_600_000 :
-    value * 86_400_000;
-  return new Date(Date.now() - ms);
-}
+import { parseSinceArg } from "../lib/format.js";
 
 /** Format a log entry for terminal display. */
 function formatLogEntry(entry: LogEntry): string {

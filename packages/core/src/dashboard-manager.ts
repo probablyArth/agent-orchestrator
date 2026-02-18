@@ -17,6 +17,7 @@ import {
   rmSync,
   mkdirSync,
   openSync,
+  closeSync,
 } from "node:fs";
 
 const execFileAsync = promisify(execFileCb);
@@ -167,6 +168,10 @@ export async function restartDashboard(opts: DashboardRestartOpts): Promise<Dash
     detached: true,
     env,
   });
+
+  // Close FDs in the parent — the child has its own copies via dup2
+  closeSync(outFd);
+  closeSync(errFd);
 
   child.unref();
 

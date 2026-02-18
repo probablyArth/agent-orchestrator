@@ -7,7 +7,7 @@
  */
 
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, writeFileSync, readFileSync, unlinkSync } from "node:fs";
+import { existsSync, writeFileSync, readFileSync, unlinkSync, openSync, closeSync, mkdirSync } from "node:fs";
 import { resolve, join } from "node:path";
 import chalk from "chalk";
 import ora from "ora";
@@ -81,6 +81,35 @@ async function startDashboard(
 ): Promise<ChildProcess> {
   const env = await buildDashboardEnv(port, configPath, terminalPort, directTerminalPort);
 
+  // In background mode, redirect stdout/stderr directly to a log file via
+  // file descriptors so logging continues after the parent process exits.
+  // In foreground mode, pipe through the parent to show output + log via LogWriter.
+  if (background && logDir) {
+    if (!existsSync(logDir)) mkdirSync(logDir, { recursive: true });
+    const outFd = openSync(join(logDir, "dashboard.out.log"), "a");
+    const errFd = openSync(join(logDir, "dashboard.err.log"), "a");
+
+    const child = spawn("pnpm", ["run", "dev"], {
+      cwd: webDir,
+      stdio: ["ignore", outFd, errFd],
+      detached: true,
+      env,
+    });
+
+    // Close FDs in the parent — the child has its own copies via dup2
+    closeSync(outFd);
+    closeSync(errFd);
+
+    child.unref();
+
+    if (child.pid) {
+      writeFileSync(join(logDir, "dashboard.pid"), String(child.pid), "utf-8");
+    }
+
+    return child;
+  }
+
+  // Foreground mode: pipe through parent for live output + structured logging
   const logWriter = logDir
     ? new LogWriter({ filePath: join(logDir, "dashboard.jsonl") })
     : null;

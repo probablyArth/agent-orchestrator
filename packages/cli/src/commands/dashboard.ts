@@ -31,7 +31,7 @@ import {
   findProcessWebDir,
   waitForPortFree,
 } from "../lib/dashboard-rebuild.js";
-import { formatAge } from "../lib/format.js";
+import { formatAge, parseSinceArg } from "../lib/format.js";
 
 /** Resolve the log directory for the first configured project. */
 function resolveLogDir(): string | null {
@@ -393,8 +393,15 @@ export function registerDashboard(program: Command): void {
           if (!running) {
             pid = portPid;
             pidSource = "port scan";
+            running = true;
+          } else if (pid && portPid !== pid) {
+            // PID file points to one process, but a different process is on the port — conflict
+            console.log(
+              `  Process:  ${chalk.yellow("conflict")} ` +
+                `(PID file: ${pid}, but port ${port} held by PID ${portPid})`,
+            );
           }
-          running = true;
+          // else: PID file matches port process — both agree, fall through to "running"
         } else if (running) {
           // PID file says running but port is free — stale PID
           console.log(
@@ -407,7 +414,7 @@ export function registerDashboard(program: Command): void {
 
         if (running && pid) {
           console.log(`  Process:  ${chalk.green("running")} (PID ${pid}, via ${pidSource})`);
-        } else if (!running) {
+        } else if (!pid) {
           console.log(`  Process:  ${chalk.dim("not running")}`);
         }
 

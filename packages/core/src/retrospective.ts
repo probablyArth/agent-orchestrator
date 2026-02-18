@@ -105,9 +105,9 @@ export function loadRetrospectives(
     return [];
   }
 
-  // Filter by session ID prefix if specified
+  // Filter by session ID — match exact session followed by timestamp delimiter
   if (opts?.sessionId) {
-    files = files.filter((f) => f.startsWith(opts.sessionId!));
+    files = files.filter((f) => f.startsWith(`${opts.sessionId!}-`));
   }
 
   const results: Retrospective[] = [];

@@ -104,6 +104,24 @@ export function activityIcon(activity: ActivityState | null): string {
   }
 }
 
+/** Parse a relative time string like "5m", "1h", "30s", "2d" into a Date. Also accepts ISO 8601. */
+export function parseSinceArg(since: string): Date {
+  const match = since.match(/^(\d+)(s|m|h|d)$/);
+  if (!match) {
+    const d = new Date(since);
+    if (!isNaN(d.getTime())) return d;
+    throw new Error(`Invalid time format: "${since}". Use "5m", "1h", "30s", or ISO 8601.`);
+  }
+  const value = parseInt(match[1], 10);
+  const unit = match[2];
+  const ms =
+    unit === "s" ? value * 1000 :
+    unit === "m" ? value * 60_000 :
+    unit === "h" ? value * 3_600_000 :
+    value * 86_400_000;
+  return new Date(Date.now() - ms);
+}
+
 // eslint-disable-next-line no-control-regex
 const ANSI_RE = /\u001b\[[0-9;]*m/g;
 
