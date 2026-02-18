@@ -534,6 +534,9 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
       if (retriggerMs <= 0) return;
       const tracker = reactionTrackers.get(`${session.id}:${reactionKey}`);
       if (!tracker) return; // Never reacted yet — nothing to retrigger
+      // Once escalated, stop retrying — human has been notified (mirrors the guard
+      // in checkPersistentConditions to prevent infinite re-escalation spam).
+      if (tracker.escalated) return;
       if (Date.now() - tracker.lastAttemptAt.getTime() < retriggerMs) return;
       // Fall through to retrigger the reaction with the same comment set
     }

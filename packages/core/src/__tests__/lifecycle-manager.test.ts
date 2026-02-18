@@ -1282,6 +1282,83 @@ describe("automated comment detection (bugbot)", () => {
     await lm.check("app-1");
     expect(mockSessionManager.send).toHaveBeenCalledTimes(2);
   });
+
+  it("does not re-escalate bugbot-comments when tracker.escalated is true", async () => {
+    const botComment = {
+      id: "comment-1",
+      botName: "reviewdog",
+      body: "Error: unused import",
+      severity: "error" as const,
+      createdAt: new Date(),
+      url: "https://github.com/org/repo/pull/42#comment-1",
+    };
+
+    const mockNotifier: Notifier = {
+      name: "mock-notifier",
+      notify: vi.fn().mockResolvedValue(undefined),
+    };
+
+    config.reactions = {
+      "bugbot-comments": {
+        auto: true,
+        action: "send-to-agent",
+        message: "Fix bot comments",
+        // retries: 0 → escalate on first attempt
+        retries: 0,
+        retriggerAfter: "30s",
+      },
+    };
+
+    const mockSCM = makeSCMWithAutomatedComments([botComment]);
+    const registryWithSCM: PluginRegistry = {
+      ...mockRegistry,
+      get: vi.fn().mockImplementation((slot: string) => {
+        if (slot === "runtime") return mockRuntime;
+        if (slot === "agent") return mockAgent;
+        if (slot === "scm") return mockSCM;
+        if (slot === "notifier") return mockNotifier;
+        return null;
+      }),
+    };
+
+    const session = makeSession({ status: "pr_open", pr: makePR() });
+    vi.mocked(mockSessionManager.get).mockResolvedValue(session);
+
+    writeMetadata(sessionsDir, "app-1", {
+      worktree: "/tmp",
+      branch: "main",
+      status: "pr_open",
+      project: "my-app",
+    });
+
+    vi.useFakeTimers();
+    try {
+      const lm = createLifecycleManager({
+        config,
+        registry: registryWithSCM,
+        sessionManager: mockSessionManager,
+      });
+
+      // Check 1: sets pr_open state
+      await lm.check("app-1");
+      // Check 2: automated comments appear → retries:0 → escalates (1 notification)
+      await lm.check("app-1");
+      expect(mockNotifier.notify).toHaveBeenCalledTimes(1);
+
+      // Advance past retriggerAfter — without the guard this would re-escalate
+      vi.advanceTimersByTime(31_000);
+
+      // Check 3: same fingerprint, timer elapsed, but tracker.escalated → no spam
+      await lm.check("app-1");
+      expect(mockNotifier.notify).toHaveBeenCalledTimes(1); // still 1
+
+      vi.advanceTimersByTime(31_000);
+      await lm.check("app-1");
+      expect(mockNotifier.notify).toHaveBeenCalledTimes(1); // still 1
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("persistent retrigger (retriggerAfter)", () => {

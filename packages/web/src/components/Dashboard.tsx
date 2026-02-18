@@ -71,8 +71,11 @@ export function Dashboard({ sessions, stats, orchestratorId, projectName }: Dash
     const res = await fetch(`/api/prs/${prNumber}/merge`, { method: "POST" });
     if (!res.ok) {
       let errorMessage = `Failed to merge PR #${prNumber}`;
+      // Read body as text first — res.json() and res.text() both consume the stream,
+      // so calling res.text() in the catch after res.json() throws would always fail.
+      const text = await res.text().catch(() => "");
       try {
-        const body = await res.json();
+        const body = JSON.parse(text) as Record<string, unknown>;
         if (body.error) {
           errorMessage += `:\n\n${body.error}`;
         }
@@ -80,10 +83,10 @@ export function Dashboard({ sessions, stats, orchestratorId, projectName }: Dash
           errorMessage += `\n${body.detail}`;
         }
         if (body.blockers && Array.isArray(body.blockers) && body.blockers.length > 0) {
-          errorMessage += `\n\nBlockers:\n${body.blockers.map((b: string) => `• ${b}`).join("\n")}`;
+          errorMessage += `\n\nBlockers:\n${(body.blockers as string[]).map((b) => `• ${b}`).join("\n")}`;
         }
       } catch {
-        errorMessage += `:\n\n${await res.text().catch(() => "Unknown error")}`;
+        if (text) errorMessage += `:\n\n${text}`;
       }
       alert(errorMessage);
     }
