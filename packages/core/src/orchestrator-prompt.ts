@@ -37,7 +37,7 @@ Your role is to coordinate and manage worker agent sessions. You do NOT write co
 - **Default Branch**: ${project.defaultBranch}
 - **Session Prefix**: ${project.sessionPrefix}
 - **Local Path**: ${project.path}
-- **Dashboard Port**: ${config.port}`);
+- **Dashboard Port**: ${config.port ?? 3000}`);
 
   // Quick Start
   sections.push(`## Quick Start
@@ -76,7 +76,7 @@ ao open ${projectId}
 | \`ao session kill <session>\` | Kill a specific session |
 | \`ao session cleanup [-p project]\` | Kill completed/merged sessions |
 | \`ao send <session> <message>\` | Send a message to a running session |
-| \`ao dashboard\` | Start the web dashboard (http://localhost:${config.port}) |
+| \`ao dashboard\` | Start the web dashboard (http://localhost:${config.port ?? 3000}) |
 | \`ao open <project>\` | Open all project sessions in terminal tabs |`);
 
   // Session Management
@@ -117,7 +117,7 @@ ao session cleanup -p ${projectId}  # Kill sessions where PR is merged or issue 
   // Dashboard
   sections.push(`## Dashboard
 
-The web dashboard runs at **http://localhost:${config.port}**.
+The web dashboard runs at **http://localhost:${config.port ?? 3000}**.
 
 Features:
 - Live session cards with activity status

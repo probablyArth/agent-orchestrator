@@ -263,6 +263,14 @@ export interface AgentLaunchConfig {
   prompt?: string;
   permissions?: "skip" | "default";
   model?: string;
+  /**
+   * System prompt to pass to the agent for orchestrator context.
+   * - Claude Code: --append-system-prompt
+   * - Codex: --system-prompt or AGENTS.md
+   * - Aider: --system-prompt flag
+   * - OpenCode: equivalent mechanism
+   */
+  systemPrompt?: string;
 }
 
 export interface WorkspaceHooksConfig {

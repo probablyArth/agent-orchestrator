@@ -1,32 +1,82 @@
 /**
  * `ao start` and `ao stop` commands — unified orchestrator startup.
  *
- * Starts the dashboard and orchestrator agent session. The orchestrator prompt
- * is passed to the agent via --append-system-prompt (or equivalent flag) at
- * launch time — no file writing required.
+ * Starts both the dashboard and the orchestrator agent session, generating
+ * CLAUDE.orchestrator.md and injecting it via CLAUDE.local.md import.
  */
 
-import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { type ChildProcess } from "node:child_process";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
 import chalk from "chalk";
 import ora from "ora";
 import type { Command } from "commander";
 import {
-  loadConfig,
   generateOrchestratorPrompt,
   hasTmuxSession,
   newTmuxSession,
   tmuxSendKeys,
-  writeMetadata,
-  deleteMetadata,
   getSessionsDir,
   type OrchestratorConfig,
   type ProjectConfig,
 } from "@composio/ao-core";
 import { exec, getTmuxSessions } from "../lib/shell.js";
 import { getAgent } from "../lib/plugins.js";
-import { findWebDir } from "../lib/web-dir.js";
+import { getConfig, getConfigPath } from "../services/ConfigService.js";
+import { PortManager } from "../services/PortManager.js";
+import { DashboardManager } from "../services/DashboardManager.js";
+import { MetadataService } from "../services/MetadataService.js";
+
+/**
+ * Ensure CLAUDE.orchestrator.md exists in the project directory.
+ * Generate it if missing or if --regenerate flag is set.
+ */
+function ensureOrchestratorPrompt(
+  projectPath: string,
+  config: OrchestratorConfig,
+  projectId: string,
+  project: ProjectConfig,
+  regenerate = false,
+): void {
+  const promptPath = join(projectPath, "CLAUDE.orchestrator.md");
+
+  if (existsSync(promptPath) && !regenerate) {
+    return; // Already exists and not regenerating
+  }
+
+  const content = generateOrchestratorPrompt({ config, projectId, project });
+  writeFileSync(promptPath, content, "utf-8");
+}
+
+/**
+ * Ensure CLAUDE.local.md imports CLAUDE.orchestrator.md.
+ * This function is idempotent — multiple calls have no additional effect.
+ */
+function ensureOrchestratorImport(projectPath: string): void {
+  const localMdPath = join(projectPath, "CLAUDE.local.md");
+  const importLine = "@CLAUDE.orchestrator.md";
+
+  let content = "";
+  if (existsSync(localMdPath)) {
+    content = readFileSync(localMdPath, "utf-8");
+  }
+
+  // Check if import already exists
+  if (content.includes(importLine)) {
+    return; // Already imported
+  }
+
+  // Append import
+  if (content && !content.endsWith("\n")) {
+    content += "\n";
+  }
+  if (content) {
+    content += "\n"; // Blank line separator
+  }
+  content += `${importLine}\n`;
+
+  writeFileSync(localMdPath, content, "utf-8");
+}
 
 /**
  * Resolve project from config.
@@ -66,66 +116,37 @@ function resolveProject(
   );
 }
 
-/**
- * Start dashboard server in the background.
- * Returns the child process handle for cleanup.
- */
-function startDashboard(port: number, webDir: string): ChildProcess {
-  const child = spawn("npx", ["next", "dev", "-p", String(port)], {
-    cwd: webDir,
-    stdio: "inherit",
-    detached: false,
-  });
-
-  child.on("error", (err) => {
-    console.error(chalk.red("Dashboard failed to start:"), err);
-  });
-
-  return child;
-}
-
-/**
- * Stop dashboard server.
- * Uses lsof to find the process listening on the port, then kills it.
- * Best effort — if it fails, just warn the user.
- */
-async function stopDashboard(port: number): Promise<void> {
-  try {
-    // Find PIDs listening on the port (can be multiple: parent + children)
-    const { stdout } = await exec("lsof", ["-ti", `:${port}`]);
-    const pids = stdout
-      .trim()
-      .split("\n")
-      .filter((p) => p.length > 0);
-
-    if (pids.length > 0) {
-      // Kill all processes (pass PIDs as separate arguments)
-      await exec("kill", pids);
-      console.log(chalk.green("Dashboard stopped"));
-    } else {
-      console.log(chalk.yellow(`Dashboard not running on port ${port}`));
-    }
-  } catch {
-    console.log(chalk.yellow("Could not stop dashboard (may not be running)"));
-  }
-}
-
 export function registerStart(program: Command): void {
   program
     .command("start [project]")
     .description("Start orchestrator agent and dashboard for a project")
     .option("--no-dashboard", "Skip starting the dashboard server")
     .option("--no-orchestrator", "Skip starting the orchestrator agent")
+    .option("--regenerate", "Regenerate CLAUDE.orchestrator.md")
     .action(
       async (
         projectArg?: string,
-        opts?: { dashboard?: boolean; orchestrator?: boolean },
+        opts?: { dashboard?: boolean; orchestrator?: boolean; regenerate?: boolean },
       ) => {
         try {
-          const config = loadConfig();
+          const configPath = getConfigPath();
+          if (!configPath) {
+            throw new Error("No agent-orchestrator.yaml found. Run `ao init` to create one.");
+          }
+
+          const config = getConfig(configPath);
           const { projectId, project } = resolveProject(config, projectArg);
           const sessionId = `${project.sessionPrefix}-orchestrator`;
-          const port = config.port;
+
+          // Allocate ports for all services
+          const portManager = new PortManager();
+          const ports = await portManager.allocateServicePorts(config.port ?? 3000);
+
+          if (ports.dashboard !== (config.port ?? 3000)) {
+            console.log(
+              chalk.yellow(`Port ${config.port ?? 3000} in use, using ${ports.dashboard} instead`),
+            );
+          }
 
           console.log(chalk.bold(`\nStarting orchestrator for ${chalk.cyan(project.name)}\n`));
 
@@ -133,22 +154,29 @@ export function registerStart(program: Command): void {
           const spinner = ora();
           let dashboardProcess: ChildProcess | null = null;
           let exists = false; // Track whether orchestrator session already exists
+          const dashboardManager = new DashboardManager();
 
           if (opts?.dashboard !== false) {
             spinner.start("Starting dashboard");
-            const webDir = findWebDir();
-            if (!existsSync(resolve(webDir, "package.json"))) {
-              spinner.fail("Dashboard not found");
-              throw new Error("Could not find @composio/ao-web package. Run: pnpm install");
-            }
 
-            dashboardProcess = startDashboard(port, webDir);
-            spinner.succeed(`Dashboard starting on http://localhost:${port}`);
-            console.log(chalk.dim("  (Dashboard will be ready in a few seconds)\n"));
+            try {
+              dashboardProcess = dashboardManager.start({
+                ports,
+                configPath,
+              });
+              spinner.succeed(`Dashboard starting on http://localhost:${ports.dashboard}`);
+              console.log(chalk.dim("  (Dashboard will be ready in a few seconds)\n"));
+            } catch (err) {
+              spinner.fail("Dashboard not found");
+              throw err;
+            }
           }
 
           // Create orchestrator tmux session (unless --no-orchestrator or already exists)
           if (opts?.orchestrator !== false) {
+            const sessionsDir = getSessionsDir(config.configPath, project.path);
+            const metadata = new MetadataService(sessionsDir);
+
             // Check if orchestrator session already exists
             exists = await hasTmuxSession(sessionId);
 
@@ -158,16 +186,34 @@ export function registerStart(program: Command): void {
                   `Orchestrator session "${sessionId}" is already running (skipping creation)`,
                 ),
               );
+
+              // Update metadata with current service ports
+              metadata.update(sessionId, {
+                dashboardPort: String(ports.dashboard),
+                terminalWsPort: String(ports.terminalWs),
+                directTerminalWsPort: String(ports.directTerminalWs),
+              });
             } else {
               try {
-                // Get agent instance (used for hooks and launch)
-                const agent = getAgent(config, projectId);
-                const sessionsDir = getSessionsDir(config.configPath, project.path);
-
-                // Generate orchestrator prompt (passed to agent via launch command)
+                // Generate orchestrator prompt (written to file + passed via launch config)
                 spinner.start("Generating orchestrator prompt");
+                ensureOrchestratorPrompt(
+                  project.path,
+                  config,
+                  projectId,
+                  project,
+                  opts?.regenerate ?? false,
+                );
                 const systemPrompt = generateOrchestratorPrompt({ config, projectId, project });
                 spinner.succeed("Orchestrator prompt ready");
+
+                // Ensure CLAUDE.local.md imports CLAUDE.orchestrator.md
+                spinner.start("Configuring CLAUDE.local.md");
+                ensureOrchestratorImport(project.path);
+                spinner.succeed("CLAUDE.local.md configured");
+
+                // Get agent instance (used for hooks and launch)
+                const agent = getAgent(config, projectId);
 
                 // Setup agent hooks for automatic metadata updates
                 spinner.start("Configuring agent hooks");
@@ -178,7 +224,7 @@ export function registerStart(program: Command): void {
 
                 spinner.start("Creating orchestrator session");
 
-                // Get agent launch command (includes system prompt)
+                // Get agent launch command
                 const launchCmd = agent.getLaunchCommand({
                   sessionId,
                   projectConfig: project,
@@ -227,13 +273,16 @@ export function registerStart(program: Command): void {
                     data: {},
                   });
 
-                  writeMetadata(sessionsDir, sessionId, {
+                  metadata.write(sessionId, {
                     worktree: project.path,
                     branch: project.defaultBranch,
                     status: "working",
                     project: projectId,
                     createdAt: new Date().toISOString(),
                     runtimeHandle,
+                    dashboardPort: ports.dashboard,
+                    terminalWsPort: ports.terminalWs,
+                    directTerminalWsPort: ports.directTerminalWs,
                   });
                 } catch (err) {
                   // Cleanup tmux session if metadata write or agent launch fails
@@ -258,11 +307,22 @@ export function registerStart(program: Command): void {
             }
           }
 
+          // Always persist service ports so `ao stop` can find them
+          if (opts?.orchestrator === false && opts?.dashboard !== false) {
+            const sessionsDir = getSessionsDir(config.configPath, project.path);
+            const metadata = new MetadataService(sessionsDir);
+            metadata.update(sessionId, {
+              dashboardPort: String(ports.dashboard),
+              terminalWsPort: String(ports.terminalWs),
+              directTerminalWsPort: String(ports.directTerminalWs),
+            });
+          }
+
           // Print summary based on what was actually started
           console.log(chalk.bold.green("\n✓ Startup complete\n"));
 
           if (opts?.dashboard !== false) {
-            console.log(chalk.cyan("Dashboard:"), `http://localhost:${port}`);
+            console.log(chalk.cyan("Dashboard:"), `http://localhost:${ports.dashboard}`);
           }
 
           if (opts?.orchestrator !== false && !exists) {
@@ -305,11 +365,19 @@ export function registerStop(program: Command): void {
     .description("Stop orchestrator agent and dashboard for a project")
     .action(async (projectArg?: string) => {
       try {
-        const config = loadConfig();
+        const config = getConfig();
         const { projectId: _projectId, project } = resolveProject(config, projectArg);
         const sessionId = `${project.sessionPrefix}-orchestrator`;
-        const port = config.port;
         const sessionsDir = getSessionsDir(config.configPath, project.path);
+        const metadata = new MetadataService(sessionsDir);
+
+        // Read port from metadata (actual port used), fallback to config default
+        const sessionMeta = metadata.read(sessionId);
+        const dashboardPort = sessionMeta?.dashboardPort ?? (config.port ?? 3000);
+
+        // Read WS ports from metadata, fallback to defaults
+        const terminalWsPort = sessionMeta?.terminalWsPort ?? 3001;
+        const directTerminalWsPort = sessionMeta?.directTerminalWsPort ?? 3003;
 
         console.log(chalk.bold(`\nStopping orchestrator for ${chalk.cyan(project.name)}\n`));
 
@@ -321,13 +389,19 @@ export function registerStop(program: Command): void {
           spinner.succeed("Orchestrator session stopped");
 
           // Archive metadata
-          deleteMetadata(sessionsDir, sessionId, true);
+          metadata.delete(sessionId, true);
         } else {
           console.log(chalk.yellow(`Orchestrator session "${sessionId}" is not running`));
         }
 
-        // Stop dashboard
-        await stopDashboard(port);
+        // Stop dashboard and WebSocket servers
+        const dashboardManager = new DashboardManager();
+        await dashboardManager.stop({
+          dashboard: dashboardPort,
+          terminalWs: terminalWsPort,
+          directTerminalWs: directTerminalWsPort,
+        });
+        console.log(chalk.green("Dashboard stopped"));
 
         console.log(chalk.bold.green("\n✓ Orchestrator stopped\n"));
       } catch (err) {
