@@ -573,8 +573,10 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
       const tracker = reactionTrackers.get(`${session.id}:${reactionKey}`);
       if (tracker?.escalated) return;
       await executeReaction(session.id, session.projectId, reactionKey, reactionConfig);
-    } else if (!reactionConfig || reactionConfig.action === "notify") {
-      // No configured reaction or notify-only: surface to human
+    } else {
+      // No configured reaction, notify-only, or auto: false — surface to human.
+      // Mirrors the transition-based path (lines 708-714) which falls through to
+      // notifyHuman whenever the automated action is skipped (including auto: false).
       await notifyHuman(event, event.priority);
     }
   }

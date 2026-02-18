@@ -1437,6 +1437,73 @@ describe("automated comment detection (bugbot)", () => {
     await lm.check("app-1");
     expect(mockNotifier.notify).toHaveBeenCalledTimes(1); // still 1, no re-escalation
   });
+
+  it("notifies human when bugbot-comments has auto: false and non-notify action", async () => {
+    // Regression: auto: false + action: "send-to-agent" was silently dropped.
+    // The automated action is skipped (auto: false) but a human notification should
+    // still fire — mirrors the transition-based path which always falls through to
+    // notifyHuman when the automated action is skipped.
+    const botComment = {
+      id: "comment-1",
+      botName: "reviewdog",
+      body: "Error: unused import",
+      severity: "error" as const,
+      createdAt: new Date(),
+      url: "https://github.com/org/repo/pull/42#comment-1",
+    };
+
+    const mockNotifier: Notifier = {
+      name: "mock-notifier",
+      notify: vi.fn().mockResolvedValue(undefined),
+    };
+
+    config.reactions = {
+      "bugbot-comments": {
+        auto: false, // no automated agent action
+        action: "send-to-agent",
+        message: "Fix bot comments",
+      },
+    };
+
+    // Route "warning" to "desktop" so notifyHuman(event, "warning") reaches the mock notifier
+    // (the default test config routes "warning" to [] to avoid noise in other tests).
+    config.notificationRouting = { ...config.notificationRouting, warning: ["desktop"] };
+
+    const mockSCM = makeSCMWithAutomatedComments([botComment]);
+    const registryWithSCM: PluginRegistry = {
+      ...mockRegistry,
+      get: vi.fn().mockImplementation((slot: string) => {
+        if (slot === "runtime") return mockRuntime;
+        if (slot === "agent") return mockAgent;
+        if (slot === "scm") return mockSCM;
+        if (slot === "notifier") return mockNotifier;
+        return null;
+      }),
+    };
+
+    const session = makeSession({ status: "pr_open", pr: makePR() });
+    vi.mocked(mockSessionManager.get).mockResolvedValue(session);
+
+    writeMetadata(sessionsDir, "app-1", {
+      worktree: "/tmp",
+      branch: "main",
+      status: "pr_open",
+      project: "my-app",
+    });
+
+    const lm = createLifecycleManager({
+      config,
+      registry: registryWithSCM,
+      sessionManager: mockSessionManager,
+    });
+
+    // Check 1: pr_open sets initial state
+    await lm.check("app-1");
+    // Check 2: automated comments appear — auto: false so no agent send, but human notified
+    await lm.check("app-1");
+    expect(mockSessionManager.send).not.toHaveBeenCalled(); // no automated action
+    expect(mockNotifier.notify).toHaveBeenCalledTimes(1); // human notified as fallback
+  });
 });
 
 describe("persistent retrigger (retriggerAfter)", () => {
