@@ -156,6 +156,7 @@ export function registerStart(program: Command): void {
           }
 
           // Create orchestrator session (unless --no-orchestrator or already exists)
+          let tmuxTarget = sessionId; // For the attach hint — updated to hash-based name after spawn
           if (opts?.orchestrator !== false) {
             const sm = await getSessionManager(config);
 
@@ -164,6 +165,9 @@ export function registerStart(program: Command): void {
             exists = existing !== null && existing.status !== "killed";
 
             if (exists) {
+              if (existing?.runtimeHandle?.id) {
+                tmuxTarget = existing.runtimeHandle.id;
+              }
               console.log(
                 chalk.yellow(
                   `Orchestrator session "${sessionId}" is already running (skipping creation)`,
@@ -174,7 +178,10 @@ export function registerStart(program: Command): void {
                 spinner.start("Creating orchestrator session");
                 const systemPrompt = generateOrchestratorPrompt({ config, projectId, project });
 
-                await sm.spawnOrchestrator({ projectId, systemPrompt });
+                const session = await sm.spawnOrchestrator({ projectId, systemPrompt });
+                if (session.runtimeHandle?.id) {
+                  tmuxTarget = session.runtimeHandle.id;
+                }
                 spinner.succeed("Orchestrator session created");
               } catch (err) {
                 spinner.fail("Orchestrator setup failed");
@@ -198,7 +205,7 @@ export function registerStart(program: Command): void {
           }
 
           if (opts?.orchestrator !== false && !exists) {
-            console.log(chalk.cyan("Orchestrator:"), `tmux attach -t ${sessionId}`);
+            console.log(chalk.cyan("Orchestrator:"), `tmux attach -t ${tmuxTarget}`);
           } else if (exists) {
             console.log(chalk.cyan("Orchestrator:"), `already running (${sessionId})`);
           }
