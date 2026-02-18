@@ -187,9 +187,9 @@ export const manifest = {
  * Convert a workspace path to Claude's project directory path.
  * Claude stores sessions at ~/.claude/projects/{encoded-path}/
  *
- * Verified against Claude Code's actual encoding (as of v1.x):
- * the path has its leading / stripped, then all / and . are replaced with -.
- * e.g. /Users/dev/.worktrees/ao → Users-dev--worktrees-ao
+ * Claude Code's encoding simply replaces all / and . with -.
+ * The leading / becomes a leading - in the directory name.
+ * e.g. /Users/dev/.worktrees/ao → -Users-dev--worktrees-ao
  *
  * If Claude Code changes its encoding scheme this will silently break
  * introspection. The path can be validated at runtime by checking whether
@@ -200,7 +200,7 @@ export const manifest = {
 export function toClaudeProjectPath(workspacePath: string): string {
   // Handle Windows drive letters (C:\Users\... → C-Users-...)
   const normalized = workspacePath.replace(/\\/g, "/");
-  return normalized.replace(/^\//, "").replace(/:/g, "").replace(/[/.]/g, "-");
+  return normalized.replace(/:/g, "").replace(/[/.]/g, "-");
 }
 
 /** Find the most recently modified .jsonl session file in a directory */

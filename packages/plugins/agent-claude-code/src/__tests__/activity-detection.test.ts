@@ -3,16 +3,16 @@ import { toClaudeProjectPath } from "../index.js";
 
 describe("Claude Code Activity Detection", () => {
   describe("toClaudeProjectPath", () => {
-    it("encodes paths correctly", () => {
-      expect(toClaudeProjectPath("/Users/dev/.worktrees/ao")).toBe("Users-dev--worktrees-ao");
+    it("encodes paths correctly with leading dash", () => {
+      expect(toClaudeProjectPath("/Users/dev/.worktrees/ao")).toBe("-Users-dev--worktrees-ao");
     });
 
-    it("strips leading slash", () => {
-      expect(toClaudeProjectPath("/tmp/test")).toBe("tmp-test");
+    it("preserves leading slash as dash", () => {
+      expect(toClaudeProjectPath("/tmp/test")).toBe("-tmp-test");
     });
 
     it("replaces dots", () => {
-      expect(toClaudeProjectPath("/path/to/.hidden")).toBe("path-to--hidden");
+      expect(toClaudeProjectPath("/path/to/.hidden")).toBe("-path-to--hidden");
     });
 
     it("handles Windows paths", () => {

@@ -168,7 +168,8 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
   }
 
   /**
-   * Enrich session with live runtime state (alive/exited) and activity detection.
+   * Enrich session with live runtime state (alive/exited), activity detection,
+   * and agent session info (summary, cost, session ID).
    * Mutates the session object in place.
    */
   async function enrichSessionWithRuntimeState(
@@ -194,6 +195,18 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
         }
       } catch {
         // Can't check — assume still alive
+      }
+    }
+
+    // Enrich with agent session info (summary, cost, agent session ID)
+    if (plugins.agent && session.workspacePath) {
+      try {
+        const info = await plugins.agent.getSessionInfo(session);
+        if (info) {
+          session.agentInfo = info;
+        }
+      } catch {
+        // Agent info extraction failed — keep existing agentInfo from metadata
       }
     }
   }

@@ -437,7 +437,7 @@ describe("getSessionInfo", () => {
       mockJsonlFiles('{"type":"user","message":{"content":"hello"}}');
       await agent.getSessionInfo(makeSession({ workspacePath: "/Users/dev/.worktrees/ao/ao-3" }));
       expect(mockReaddir).toHaveBeenCalledWith(
-        "/mock/home/.claude/projects/Users-dev--worktrees-ao-ao-3",
+        "/mock/home/.claude/projects/-Users-dev--worktrees-ao-ao-3",
       );
     });
   });
