@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { createLifecycleManager } from "../lifecycle-manager.js";
+import { createNullEventLog } from "../event-log.js";
 import { writeMetadata, readMetadataRaw } from "../metadata.js";
 import { getSessionsDir, getProjectBaseDir } from "../paths.js";
 import type {
@@ -17,6 +18,8 @@ import type {
   Notifier,
   ActivityState,
   PRInfo,
+  EventLog,
+  OrchestratorEvent,
 } from "../types.js";
 
 let tmpDir: string;
@@ -863,5 +866,414 @@ describe("getStates", () => {
     // Modifying returned map shouldn't affect internal state
     states.set("app-1", "killed");
     expect(lm.getStates().get("app-1")).toBe("working");
+  });
+});
+
+describe("event log integration", () => {
+  it("logs events to the provided event log on state transition", async () => {
+    const loggedEvents: OrchestratorEvent[] = [];
+    const eventLog: EventLog = {
+      log: (event) => loggedEvents.push(event),
+      readRecent: () => [],
+    };
+
+    const session = makeSession({ status: "spawning" });
+    vi.mocked(mockSessionManager.get).mockResolvedValue(session);
+
+    writeMetadata(sessionsDir, "app-1", {
+      worktree: "/tmp",
+      branch: "main",
+      status: "spawning",
+      project: "my-app",
+    });
+
+    const lm = createLifecycleManager({
+      config,
+      registry: mockRegistry,
+      sessionManager: mockSessionManager,
+      eventLog,
+    });
+
+    await lm.check("app-1");
+
+    expect(lm.getStates().get("app-1")).toBe("working");
+    expect(loggedEvents.length).toBeGreaterThan(0);
+    expect(loggedEvents[0]).toMatchObject({
+      type: "session.working",
+      sessionId: "app-1",
+      projectId: "my-app",
+    });
+  });
+
+  it("accepts createNullEventLog as a no-op default", async () => {
+    const nullLog = createNullEventLog();
+    const session = makeSession({ status: "spawning" });
+    vi.mocked(mockSessionManager.get).mockResolvedValue(session);
+
+    writeMetadata(sessionsDir, "app-1", {
+      worktree: "/tmp",
+      branch: "main",
+      status: "spawning",
+      project: "my-app",
+    });
+
+    const lm = createLifecycleManager({
+      config,
+      registry: mockRegistry,
+      sessionManager: mockSessionManager,
+      eventLog: nullLog,
+    });
+
+    // Should not throw
+    await lm.check("app-1");
+    expect(lm.getStates().get("app-1")).toBe("working");
+    expect(nullLog.readRecent()).toEqual([]);
+  });
+});
+
+describe("automated comment detection (bugbot)", () => {
+  function makeSCMWithAutomatedComments(
+    automatedComments: ReturnType<SCM["getAutomatedComments"]> extends Promise<infer T>
+      ? T
+      : never,
+  ): SCM {
+    return {
+      name: "mock-scm",
+      detectPR: vi.fn(),
+      getPRState: vi.fn().mockResolvedValue("open"),
+      mergePR: vi.fn(),
+      closePR: vi.fn(),
+      getCIChecks: vi.fn(),
+      getCISummary: vi.fn().mockResolvedValue("passing"),
+      getReviews: vi.fn(),
+      getReviewDecision: vi.fn().mockResolvedValue("none"),
+      getPendingComments: vi.fn().mockResolvedValue([]),
+      getAutomatedComments: vi.fn().mockResolvedValue(automatedComments),
+      getMergeability: vi.fn(),
+    };
+  }
+
+  it("triggers bugbot-comments reaction when automated comments appear", async () => {
+    const botComment = {
+      id: "comment-1",
+      botName: "reviewdog",
+      body: "Error: unused import",
+      path: "src/index.ts",
+      line: 5,
+      severity: "error" as const,
+      createdAt: new Date(),
+      url: "https://github.com/org/repo/pull/42#comment-1",
+    };
+
+    config.reactions = {
+      "bugbot-comments": {
+        auto: true,
+        action: "send-to-agent",
+        message: "Fix bot comments",
+      },
+    };
+
+    const mockSCM = makeSCMWithAutomatedComments([botComment]);
+    const registryWithSCM: PluginRegistry = {
+      ...mockRegistry,
+      get: vi.fn().mockImplementation((slot: string) => {
+        if (slot === "runtime") return mockRuntime;
+        if (slot === "agent") return mockAgent;
+        if (slot === "scm") return mockSCM;
+        return null;
+      }),
+    };
+
+    // Session in pr_open state — status doesn't change, but automated comments appear
+    const session = makeSession({ status: "pr_open", pr: makePR() });
+    vi.mocked(mockSessionManager.get).mockResolvedValue(session);
+
+    writeMetadata(sessionsDir, "app-1", {
+      worktree: "/tmp",
+      branch: "main",
+      status: "pr_open",
+      project: "my-app",
+    });
+
+    const lm = createLifecycleManager({
+      config,
+      registry: registryWithSCM,
+      sessionManager: mockSessionManager,
+    });
+
+    // First check: sets pr_open state
+    await lm.check("app-1");
+    // Second check: status unchanged (pr_open → pr_open) → automated comments check fires
+    await lm.check("app-1");
+
+    expect(mockSessionManager.send).toHaveBeenCalledWith("app-1", "Fix bot comments");
+  });
+
+  it("deduplicates automated comments — does not retrigger for same comment set", async () => {
+    const botComment = {
+      id: "comment-1",
+      botName: "reviewdog",
+      body: "Error: unused import",
+      severity: "error" as const,
+      createdAt: new Date(),
+      url: "https://github.com/org/repo/pull/42#comment-1",
+    };
+
+    config.reactions = {
+      "bugbot-comments": {
+        auto: true,
+        action: "send-to-agent",
+        message: "Fix bot comments",
+      },
+    };
+
+    const mockSCM = makeSCMWithAutomatedComments([botComment]);
+    const registryWithSCM: PluginRegistry = {
+      ...mockRegistry,
+      get: vi.fn().mockImplementation((slot: string) => {
+        if (slot === "runtime") return mockRuntime;
+        if (slot === "agent") return mockAgent;
+        if (slot === "scm") return mockSCM;
+        return null;
+      }),
+    };
+
+    const session = makeSession({ status: "pr_open", pr: makePR() });
+    vi.mocked(mockSessionManager.get).mockResolvedValue(session);
+
+    writeMetadata(sessionsDir, "app-1", {
+      worktree: "/tmp",
+      branch: "main",
+      status: "pr_open",
+      project: "my-app",
+    });
+
+    const lm = createLifecycleManager({
+      config,
+      registry: registryWithSCM,
+      sessionManager: mockSessionManager,
+    });
+
+    // First check: transitions pr_open → pr_open (status unchanged)
+    // Automated comments check NOT called on first encounter (no prior state to compare)
+    await lm.check("app-1");
+    // Second check: same status → automated check fires, sees comment-1, sends message
+    await lm.check("app-1");
+    expect(mockSessionManager.send).toHaveBeenCalledTimes(1);
+
+    // Third check: same comment set → fingerprint matches, no resend
+    await lm.check("app-1");
+    expect(mockSessionManager.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("retriggers when new automated comments appear (fingerprint changes)", async () => {
+    const firstComment = {
+      id: "comment-1",
+      botName: "reviewdog",
+      body: "Error 1",
+      severity: "error" as const,
+      createdAt: new Date(),
+      url: "https://github.com/org/repo/pull/42#comment-1",
+    };
+    const secondComment = {
+      id: "comment-2",
+      botName: "reviewdog",
+      body: "Error 2",
+      severity: "error" as const,
+      createdAt: new Date(),
+      url: "https://github.com/org/repo/pull/42#comment-2",
+    };
+
+    config.reactions = {
+      "bugbot-comments": {
+        auto: true,
+        action: "send-to-agent",
+        message: "Fix bot comments",
+      },
+    };
+
+    const getAutomatedComments = vi.fn().mockResolvedValue([firstComment]);
+
+    const mockSCM: SCM = {
+      ...makeSCMWithAutomatedComments([firstComment]),
+      getAutomatedComments,
+    };
+
+    const registryWithSCM: PluginRegistry = {
+      ...mockRegistry,
+      get: vi.fn().mockImplementation((slot: string) => {
+        if (slot === "runtime") return mockRuntime;
+        if (slot === "agent") return mockAgent;
+        if (slot === "scm") return mockSCM;
+        return null;
+      }),
+    };
+
+    const session = makeSession({ status: "pr_open", pr: makePR() });
+    vi.mocked(mockSessionManager.get).mockResolvedValue(session);
+
+    writeMetadata(sessionsDir, "app-1", {
+      worktree: "/tmp",
+      branch: "main",
+      status: "pr_open",
+      project: "my-app",
+    });
+
+    const lm = createLifecycleManager({
+      config,
+      registry: registryWithSCM,
+      sessionManager: mockSessionManager,
+    });
+
+    // Check 1: transitions to pr_open (initial)
+    await lm.check("app-1");
+    // Check 2: automated comment check fires with comment-1 → sends message once
+    await lm.check("app-1");
+    expect(mockSessionManager.send).toHaveBeenCalledTimes(1);
+
+    // Now a new comment appears
+    getAutomatedComments.mockResolvedValue([firstComment, secondComment]);
+
+    // Check 3: fingerprint changes → retrigger
+    await lm.check("app-1");
+    expect(mockSessionManager.send).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("persistent retrigger (retriggerAfter)", () => {
+  it("retriggers send-to-agent when session stays in same bad state past retriggerAfter", async () => {
+    config.reactions = {
+      "ci-failed": {
+        auto: true,
+        action: "send-to-agent",
+        message: "CI still failing. Try again.",
+        retries: 3,
+        // 30 seconds — will be fast-forwarded via fake timers
+        retriggerAfter: "30s",
+      },
+    };
+
+    const mockSCM: SCM = {
+      name: "mock-scm",
+      detectPR: vi.fn(),
+      getPRState: vi.fn().mockResolvedValue("open"),
+      mergePR: vi.fn(),
+      closePR: vi.fn(),
+      getCIChecks: vi.fn(),
+      getCISummary: vi.fn().mockResolvedValue("failing"),
+      getReviews: vi.fn(),
+      getReviewDecision: vi.fn().mockResolvedValue("none"),
+      getPendingComments: vi.fn().mockResolvedValue([]),
+      getAutomatedComments: vi.fn().mockResolvedValue([]),
+      getMergeability: vi.fn(),
+    };
+
+    const registryWithSCM: PluginRegistry = {
+      ...mockRegistry,
+      get: vi.fn().mockImplementation((slot: string) => {
+        if (slot === "runtime") return mockRuntime;
+        if (slot === "agent") return mockAgent;
+        if (slot === "scm") return mockSCM;
+        return null;
+      }),
+    };
+
+    // Start in pr_open so first check transitions to ci_failed
+    const session = makeSession({ status: "pr_open", pr: makePR() });
+    vi.mocked(mockSessionManager.get).mockResolvedValue(session);
+
+    writeMetadata(sessionsDir, "app-1", {
+      worktree: "/tmp",
+      branch: "main",
+      status: "pr_open",
+      project: "my-app",
+    });
+
+    vi.useFakeTimers();
+    try {
+      const lm = createLifecycleManager({
+        config,
+        registry: registryWithSCM,
+        sessionManager: mockSessionManager,
+      });
+
+      // Check 1: pr_open → ci_failed (state transition) → initial reaction fires
+      await lm.check("app-1");
+      expect(mockSessionManager.send).toHaveBeenCalledTimes(1);
+
+      // Advance time past retriggerAfter (30s)
+      vi.advanceTimersByTime(31_000);
+
+      // Check 2: ci_failed → ci_failed (no transition) → retrigger fires
+      await lm.check("app-1");
+      expect(mockSessionManager.send).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not retrigger when retriggerAfter is not configured", async () => {
+    config.reactions = {
+      "ci-failed": {
+        auto: true,
+        action: "send-to-agent",
+        message: "CI failing.",
+        retries: 3,
+        // No retriggerAfter
+      },
+    };
+
+    const mockSCM: SCM = {
+      name: "mock-scm",
+      detectPR: vi.fn(),
+      getPRState: vi.fn().mockResolvedValue("open"),
+      mergePR: vi.fn(),
+      closePR: vi.fn(),
+      getCIChecks: vi.fn(),
+      getCISummary: vi.fn().mockResolvedValue("failing"),
+      getReviews: vi.fn(),
+      getReviewDecision: vi.fn().mockResolvedValue("none"),
+      getPendingComments: vi.fn().mockResolvedValue([]),
+      getAutomatedComments: vi.fn().mockResolvedValue([]),
+      getMergeability: vi.fn(),
+    };
+
+    const registryWithSCM: PluginRegistry = {
+      ...mockRegistry,
+      get: vi.fn().mockImplementation((slot: string) => {
+        if (slot === "runtime") return mockRuntime;
+        if (slot === "agent") return mockAgent;
+        if (slot === "scm") return mockSCM;
+        return null;
+      }),
+    };
+
+    const session = makeSession({ status: "pr_open", pr: makePR() });
+    vi.mocked(mockSessionManager.get).mockResolvedValue(session);
+
+    writeMetadata(sessionsDir, "app-1", {
+      worktree: "/tmp",
+      branch: "main",
+      status: "pr_open",
+      project: "my-app",
+    });
+
+    const lm = createLifecycleManager({
+      config,
+      registry: registryWithSCM,
+      sessionManager: mockSessionManager,
+    });
+
+    // Check 1: transition → initial reaction fires
+    await lm.check("app-1");
+    expect(mockSessionManager.send).toHaveBeenCalledTimes(1);
+
+    // Check 2: same state, no retriggerAfter → no extra send
+    await lm.check("app-1");
+    expect(mockSessionManager.send).toHaveBeenCalledTimes(1);
+
+    // Check 3: still no retrigger
+    await lm.check("app-1");
+    expect(mockSessionManager.send).toHaveBeenCalledTimes(1);
   });
 });

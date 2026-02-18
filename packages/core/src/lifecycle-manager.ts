@@ -3,9 +3,21 @@
  *
  * Periodically polls all sessions and:
  * 1. Detects state transitions (spawning → working → pr_open → etc.)
- * 2. Emits events on transitions
- * 3. Triggers reactions (auto-handle CI failures, review comments, etc.)
- * 4. Escalates to human notification when auto-handling fails
+ * 2. Emits events on transitions (logged to JSONL event log)
+ * 3. Triggers reactions (auto-handle CI failures, review comments, bugbot, etc.)
+ * 4. Re-triggers reactions for persistent conditions (CI still failing, etc.)
+ * 5. Escalates to human notification when auto-handling fails
+ *
+ * Event sources polled each cycle:
+ * - Runtime liveness (is the agent process still running?)
+ * - Agent activity state (active / ready / idle / stuck / waiting_input)
+ * - PR state (open / merged / closed)
+ * - CI checks summary (passing / failing / pending)
+ * - Review decision (approved / changes_requested / pending)
+ * - Automated review comments / bugbot comments (getAutomatedComments)
+ *
+ * Note: Human review comment polling (getPendingComments) is handled by the
+ * review-comments reaction (ao-48). See: eventToReactionKey for "changes-requested".
  *
  * Reference: scripts/claude-session-status, scripts/claude-review-check
  */
@@ -31,10 +43,12 @@ import {
   type Notifier,
   type Session,
   type EventPriority,
+  type EventLog,
   type ProjectConfig as _ProjectConfig,
 } from "./types.js";
 import { updateMetadata } from "./metadata.js";
 import { getSessionsDir } from "./paths.js";
+import { createNullEventLog } from "./event-log.js";
 
 /** Parse a duration string like "10m", "30s", "1h" to milliseconds. */
 function parseDuration(str: string): number {
@@ -156,27 +170,50 @@ function eventToReactionKey(eventType: EventType): string | null {
   }
 }
 
+/**
+ * States where we should re-trigger reactions if the session stays stuck.
+ * These are "actionable" states — the agent should fix them.
+ */
+const RETRIGGER_STATES: ReadonlySet<SessionStatus> = new Set([
+  "ci_failed",
+  "changes_requested",
+  "stuck",
+  "needs_input",
+]);
+
 export interface LifecycleManagerDeps {
   config: OrchestratorConfig;
   registry: PluginRegistry;
   sessionManager: SessionManager;
+  /** Optional event log for auditing all emitted events. Defaults to no-op. */
+  eventLog?: EventLog;
 }
 
-/** Track attempt counts for reactions per session. */
+/** Track attempt counts and timing for reactions per session. */
 interface ReactionTracker {
   attempts: number;
   firstTriggered: Date;
+  /** When the reaction was last attempted (for retrigger cooldown). */
+  lastAttemptAt: Date;
 }
 
 /** Create a LifecycleManager instance. */
 export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleManager {
   const { config, registry, sessionManager } = deps;
+  const eventLog = deps.eventLog ?? createNullEventLog();
 
   const states = new Map<SessionId, SessionStatus>();
   const reactionTrackers = new Map<string, ReactionTracker>(); // "sessionId:reactionKey"
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let polling = false; // re-entrancy guard
   let allCompleteEmitted = false; // guard against repeated all_complete
+
+  /**
+   * Fingerprints of automated (bot) comments seen per session.
+   * Key: sessionId, Value: sorted comma-joined comment IDs.
+   * Prevents re-triggering the bugbot-comments reaction for the same set of comments.
+   */
+  const automatedCommentFingerprints = new Map<SessionId, string>();
 
   /** Determine current status for a session by polling plugins. */
   async function determineStatus(session: Session): Promise<SessionStatus> {
@@ -268,6 +305,22 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     return session.status;
   }
 
+  /**
+   * Get the effective reaction config for a session, merging project overrides
+   * with global defaults (project wins on any key that is set).
+   */
+  function getEffectiveReactionConfig(
+    session: Session,
+    reactionKey: string,
+  ): ReactionConfig | null {
+    const project = config.projects[session.projectId];
+    const globalReaction = config.reactions[reactionKey];
+    const projectReaction = project?.reactions?.[reactionKey];
+    if (!globalReaction && !projectReaction) return null;
+    if (projectReaction) return { ...globalReaction, ...projectReaction } as ReactionConfig;
+    return globalReaction ?? null;
+  }
+
   /** Execute a reaction for a session. */
   async function executeReaction(
     sessionId: SessionId,
@@ -279,12 +332,14 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     let tracker = reactionTrackers.get(trackerKey);
 
     if (!tracker) {
-      tracker = { attempts: 0, firstTriggered: new Date() };
+      const now = new Date();
+      tracker = { attempts: 0, firstTriggered: now, lastAttemptAt: now };
       reactionTrackers.set(trackerKey, tracker);
     }
 
     // Increment attempts before checking escalation
     tracker.attempts++;
+    tracker.lastAttemptAt = new Date();
 
     // Check if we should escalate
     const maxRetries = reactionConfig.retries ?? Infinity;
@@ -314,6 +369,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         message: `Reaction '${reactionKey}' escalated after ${tracker.attempts} attempts`,
         data: { reactionKey, attempts: tracker.attempts },
       });
+      eventLog.log(event);
       await notifyHuman(event, reactionConfig.priority ?? "urgent");
       return {
         reactionType: reactionKey,
@@ -331,7 +387,13 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         if (reactionConfig.message) {
           try {
             await sessionManager.send(sessionId, reactionConfig.message);
-
+            const event = createEvent("reaction.triggered", {
+              sessionId,
+              projectId,
+              message: `Reaction '${reactionKey}' sent message to agent (attempt ${tracker.attempts})`,
+              data: { reactionKey, attempts: tracker.attempts },
+            });
+            eventLog.log(event);
             return {
               reactionType: reactionKey,
               success: true,
@@ -359,6 +421,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
           message: `Reaction '${reactionKey}' triggered notification`,
           data: { reactionKey },
         });
+        eventLog.log(event);
         await notifyHuman(event, reactionConfig.priority ?? "info");
         return {
           reactionType: reactionKey,
@@ -377,6 +440,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
           message: `Reaction '${reactionKey}' triggered auto-merge`,
           data: { reactionKey },
         });
+        eventLog.log(event);
         await notifyHuman(event, "action");
         return {
           reactionType: reactionKey,
@@ -412,6 +476,121 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     }
   }
 
+  /**
+   * Check for automated (bot) review comments on a PR and trigger the
+   * bugbot-comments reaction when new comments appear.
+   *
+   * Deduplication: tracks a fingerprint (sorted comment IDs) per session.
+   * The reaction only fires when new comments appear that we haven't seen before.
+   * When the comment set changes (e.g., after agent fixes some), we retrigger
+   * with the new set.
+   */
+  async function checkAutomatedComments(session: Session): Promise<void> {
+    if (!session.pr) return;
+    const project = config.projects[session.projectId];
+    if (!project?.scm) return;
+    const scm = registry.get<SCM>("scm", project.scm.plugin);
+    if (!scm) return;
+
+    let comments;
+    try {
+      comments = await scm.getAutomatedComments(session.pr);
+    } catch {
+      return; // SCM error — skip this cycle
+    }
+
+    if (comments.length === 0) {
+      // No automated comments — clear any stored fingerprint so future comments retrigger
+      automatedCommentFingerprints.delete(session.id);
+      return;
+    }
+
+    // Compute fingerprint from sorted comment IDs
+    const fingerprint = comments
+      .map((c) => c.id)
+      .sort()
+      .join(",");
+    const lastFingerprint = automatedCommentFingerprints.get(session.id);
+
+    if (fingerprint === lastFingerprint) {
+      return; // Same comments as before — already reacted, skip
+    }
+
+    // New or changed automated comments — update fingerprint and trigger reaction
+    automatedCommentFingerprints.set(session.id, fingerprint);
+
+    const event = createEvent("automated_review.found", {
+      sessionId: session.id,
+      projectId: session.projectId,
+      message: `${comments.length} automated review comment(s) on PR #${session.pr.number}`,
+      priority: "warning",
+      data: {
+        prNumber: session.pr.number,
+        count: comments.length,
+        comments: comments.map((c) => ({
+          id: c.id,
+          botName: c.botName,
+          severity: c.severity,
+          path: c.path,
+          url: c.url,
+        })),
+      },
+    });
+    eventLog.log(event);
+
+    const reactionKey = "bugbot-comments";
+    const reactionConfig = getEffectiveReactionConfig(session, reactionKey);
+    if (reactionConfig && reactionConfig.action && reactionConfig.auto !== false) {
+      await executeReaction(session.id, session.projectId, reactionKey, reactionConfig);
+    } else if (!reactionConfig || reactionConfig.action === "notify") {
+      // No configured reaction or notify-only: surface to human
+      await notifyHuman(event, event.priority);
+    }
+  }
+
+  /**
+   * Re-trigger reactions for sessions that stay in a problematic state without
+   * transitioning. This handles the case where an agent received the initial
+   * "CI is failing" message but didn't fix it — we want to retry after a delay
+   * rather than silently giving up.
+   *
+   * Only fires when:
+   * 1. The session is in a RETRIGGER_STATE (ci_failed, changes_requested, etc.)
+   * 2. A reaction was previously triggered for this state (tracker exists)
+   * 3. Enough time has passed since the last attempt (retriggerAfter cooldown)
+   * 4. The reaction is configured with retriggerAfter (opt-in)
+   */
+  async function checkPersistentConditions(
+    session: Session,
+    status: SessionStatus,
+  ): Promise<void> {
+    if (!RETRIGGER_STATES.has(status)) return;
+
+    const eventType = statusToEventType(undefined, status);
+    if (!eventType) return;
+
+    const reactionKey = eventToReactionKey(eventType);
+    if (!reactionKey) return;
+
+    const reactionConfig = getEffectiveReactionConfig(session, reactionKey);
+    if (!reactionConfig?.retriggerAfter) return; // Opt-in only
+    if (reactionConfig.auto === false) return;
+    if (reactionConfig.action !== "send-to-agent") return; // Only retrigger agent sends
+
+    const trackerKey = `${session.id}:${reactionKey}`;
+    const tracker = reactionTrackers.get(trackerKey);
+    if (!tracker) return; // Never triggered before — initial trigger happens on state transition
+
+    const retriggerMs = parseDuration(reactionConfig.retriggerAfter);
+    if (retriggerMs <= 0) return;
+
+    const timeSinceLastAttempt = Date.now() - tracker.lastAttemptAt.getTime();
+    if (timeSinceLastAttempt < retriggerMs) return; // Too soon
+
+    // Re-trigger: agent is still stuck in the same bad state
+    await executeReaction(session.id, session.projectId, reactionKey, reactionConfig);
+  }
+
   /** Poll a single session and handle state transitions. */
   async function checkSession(session: Session): Promise<void> {
     // Use tracked state if available; otherwise use the persisted metadata status
@@ -438,7 +617,8 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         allCompleteEmitted = false;
       }
 
-      // Clear reaction trackers for the old status so retries reset on state changes
+      // Clear reaction trackers for the old status so retries reset on state changes.
+      // Also clear automated comment fingerprints so new comments retrigger after a fix.
       const oldEventType = statusToEventType(undefined, oldStatus);
       if (oldEventType) {
         const oldReactionKey = eventToReactionKey(oldEventType);
@@ -454,13 +634,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         const reactionKey = eventToReactionKey(eventType);
 
         if (reactionKey) {
-          // Merge project-specific overrides with global defaults
-          const project = config.projects[session.projectId];
-          const globalReaction = config.reactions[reactionKey];
-          const projectReaction = project?.reactions?.[reactionKey];
-          const reactionConfig = projectReaction
-            ? { ...globalReaction, ...projectReaction }
-            : globalReaction;
+          const reactionConfig = getEffectiveReactionConfig(session, reactionKey);
 
           if (reactionConfig && reactionConfig.action) {
             // auto: false skips automated agent actions but still allows notifications
@@ -469,7 +643,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
                 session.id,
                 session.projectId,
                 reactionKey,
-                reactionConfig as ReactionConfig,
+                reactionConfig,
               );
               // Reaction is handling this event — suppress immediate human notification.
               // "send-to-agent" retries + escalates on its own; "notify"/"auto-merge"
@@ -480,23 +654,34 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
           }
         }
 
+        // Emit event to log
+        const event = createEvent(eventType, {
+          sessionId: session.id,
+          projectId: session.projectId,
+          message: `${session.id}: ${oldStatus} → ${newStatus}`,
+          data: { oldStatus, newStatus },
+        });
+        eventLog.log(event);
+
         // For significant transitions not already notified by a reaction, notify humans
         if (!reactionHandledNotify) {
           const priority = inferPriority(eventType);
           if (priority !== "info") {
-            const event = createEvent(eventType, {
-              sessionId: session.id,
-              projectId: session.projectId,
-              message: `${session.id}: ${oldStatus} → ${newStatus}`,
-              data: { oldStatus, newStatus },
-            });
             await notifyHuman(event, priority);
           }
         }
       }
     } else {
-      // No transition but track current state
+      // No status transition — track current state
       states.set(session.id, newStatus);
+
+      // Check for automated review comments (bot/linter feedback) each poll cycle.
+      // Deduplication is handled inside checkAutomatedComments via fingerprinting.
+      await checkAutomatedComments(session);
+
+      // Check if we should re-trigger a reaction for persistent problematic conditions
+      // (e.g., CI has been failing for 10 minutes and agent hasn't fixed it yet).
+      await checkPersistentConditions(session, newStatus);
     }
   }
 
@@ -535,6 +720,11 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
           reactionTrackers.delete(trackerKey);
         }
       }
+      for (const sessionId of automatedCommentFingerprints.keys()) {
+        if (!currentSessionIds.has(sessionId)) {
+          automatedCommentFingerprints.delete(sessionId);
+        }
+      }
 
       // Check if all sessions are complete (trigger reaction only once)
       const activeSessions = sessions.filter((s) => s.status !== "merged" && s.status !== "killed");
@@ -546,6 +736,14 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         if (reactionKey) {
           const reactionConfig = config.reactions[reactionKey];
           if (reactionConfig && reactionConfig.action) {
+            const event = createEvent("summary.all_complete", {
+              sessionId: "system",
+              projectId: "all",
+              message: `All ${sessions.length} session(s) complete`,
+              priority: "info",
+              data: { totalSessions: sessions.length },
+            });
+            eventLog.log(event);
             if (reactionConfig.auto !== false || reactionConfig.action === "notify") {
               await executeReaction("system", "all", reactionKey, reactionConfig as ReactionConfig);
             }
