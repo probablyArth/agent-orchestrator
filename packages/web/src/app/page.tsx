@@ -4,6 +4,7 @@ import type { DashboardSession } from "@/lib/types";
 import { getServices, getAgent, getSCM, getTracker } from "@/lib/services";
 import {
   sessionToDashboard,
+  resolveProject,
   enrichSessionPR,
   enrichSessionIssue,
   enrichSessionAgentSummary,
@@ -43,17 +44,7 @@ export default async function Home() {
     // Enrich issue labels using tracker plugin (synchronous)
     coreSessions.forEach((core, i) => {
       if (!sessions[i].issueUrl) return;
-      let project = config.projects[core.projectId];
-      if (!project) {
-        const entry = Object.entries(config.projects).find(([, p]) =>
-          core.id.startsWith(p.sessionPrefix),
-        );
-        if (entry) project = entry[1];
-      }
-      if (!project) {
-        const firstKey = Object.keys(config.projects)[0];
-        if (firstKey) project = config.projects[firstKey];
-      }
+      const project = resolveProject(core, config.projects);
       const tracker = getTracker(registry, project);
       if (!tracker || !project) return;
       enrichSessionIssue(sessions[i], tracker, project);
@@ -63,17 +54,7 @@ export default async function Home() {
     // (reads agent's JSONL file — local I/O, not an API call)
     const summaryPromises = coreSessions.map((core, i) => {
       if (sessions[i].summary) return Promise.resolve();
-      let project = config.projects[core.projectId];
-      if (!project) {
-        const entry = Object.entries(config.projects).find(([, p]) =>
-          core.id.startsWith(p.sessionPrefix),
-        );
-        if (entry) project = entry[1];
-      }
-      if (!project) {
-        const firstKey = Object.keys(config.projects)[0];
-        if (firstKey) project = config.projects[firstKey];
-      }
+      const project = resolveProject(core, config.projects);
       const agent = getAgent(registry, project, config.defaults.agent);
       if (!agent) return Promise.resolve();
       return enrichSessionAgentSummary(sessions[i], core, agent);
@@ -82,17 +63,7 @@ export default async function Home() {
     // Enrich issue titles for sessions that have issues
     const issueTitlePromises = coreSessions.map((core, i) => {
       if (!sessions[i].issueUrl || !sessions[i].issueLabel) return Promise.resolve();
-      let project = config.projects[core.projectId];
-      if (!project) {
-        const entry = Object.entries(config.projects).find(([, p]) =>
-          core.id.startsWith(p.sessionPrefix),
-        );
-        if (entry) project = entry[1];
-      }
-      if (!project) {
-        const firstKey = Object.keys(config.projects)[0];
-        if (firstKey) project = config.projects[firstKey];
-      }
+      const project = resolveProject(core, config.projects);
       const tracker = getTracker(registry, project);
       if (!tracker || !project) return Promise.resolve();
       return enrichSessionIssueTitle(sessions[i], tracker, project);
@@ -145,17 +116,7 @@ export default async function Home() {
         }
       }
 
-      let project = config.projects[core.projectId];
-      if (!project) {
-        const entry = Object.entries(config.projects).find(([, p]) =>
-          core.id.startsWith(p.sessionPrefix),
-        );
-        if (entry) project = entry[1];
-      }
-      if (!project) {
-        const firstKey = Object.keys(config.projects)[0];
-        if (firstKey) project = config.projects[firstKey];
-      }
+      const project = resolveProject(core, config.projects);
       const scm = getSCM(registry, project);
       if (!scm) return Promise.resolve();
       return enrichSessionPR(sessions[i], scm, core.pr);

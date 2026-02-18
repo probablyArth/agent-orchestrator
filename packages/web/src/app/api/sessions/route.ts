@@ -1,32 +1,15 @@
-import { ACTIVITY_STATE, type Session, type ProjectConfig } from "@composio/ao-core";
+import { ACTIVITY_STATE } from "@composio/ao-core";
 import { NextResponse } from "next/server";
 import { getServices, getAgent, getSCM, getTracker } from "@/lib/services";
 import {
   sessionToDashboard,
+  resolveProject,
   enrichSessionPR,
   enrichSessionIssue,
   enrichSessionAgentSummary,
   enrichSessionIssueTitle,
   computeStats,
 } from "@/lib/serialize";
-
-/** Resolve which project a session belongs to. */
-function resolveProject(
-  core: Session,
-  projects: Record<string, ProjectConfig>,
-): ProjectConfig | undefined {
-  // Try explicit projectId first
-  const direct = projects[core.projectId];
-  if (direct) return direct;
-
-  // Match by session prefix
-  const entry = Object.entries(projects).find(([, p]) => core.id.startsWith(p.sessionPrefix));
-  if (entry) return entry[1];
-
-  // Fall back to first project
-  const firstKey = Object.keys(projects)[0];
-  return firstKey ? projects[firstKey] : undefined;
-}
 
 /** GET /api/sessions — List all sessions with full state
  * Query params:

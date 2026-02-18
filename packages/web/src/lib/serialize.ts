@@ -12,6 +12,24 @@ import { TTLCache, prCache, prCacheKey, type PREnrichmentData } from "./cache";
 /** Cache for issue titles (5 min TTL — issue titles rarely change) */
 const issueTitleCache = new TTLCache<string>(300_000);
 
+/** Resolve which project a session belongs to. */
+export function resolveProject(
+  core: Session,
+  projects: Record<string, ProjectConfig>,
+): ProjectConfig | undefined {
+  // Try explicit projectId first
+  const direct = projects[core.projectId];
+  if (direct) return direct;
+
+  // Match by session prefix
+  const entry = Object.entries(projects).find(([, p]) => core.id.startsWith(p.sessionPrefix));
+  if (entry) return entry[1];
+
+  // Fall back to first project
+  const firstKey = Object.keys(projects)[0];
+  return firstKey ? projects[firstKey] : undefined;
+}
+
 /** Convert a core Session to a DashboardSession (without PR/issue enrichment). */
 export function sessionToDashboard(session: Session): DashboardSession {
   return {
