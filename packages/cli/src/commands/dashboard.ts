@@ -45,7 +45,11 @@ export function registerDashboard(program: Command): void {
           console.log(
             chalk.dim(`Stopping dashboard (PID ${runningPid}) on port ${port}...`),
           );
-          process.kill(parseInt(runningPid, 10), "SIGTERM");
+          try {
+            process.kill(parseInt(runningPid, 10), "SIGTERM");
+          } catch {
+            // Process already exited (ESRCH) — that's fine
+          }
           // Wait for port to be released
           await waitForPortFree(port, 5000);
         }

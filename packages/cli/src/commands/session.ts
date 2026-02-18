@@ -109,6 +109,12 @@ export function registerSession(program: Command): void {
         const sm = await getSessionManager(config);
         const result = await sm.cleanup(opts.project, { dryRun: true });
 
+        if (result.errors.length > 0) {
+          for (const { sessionId, error } of result.errors) {
+            console.error(chalk.red(`  Error checking ${sessionId}: ${error}`));
+          }
+        }
+
         if (result.killed.length === 0) {
           console.log(chalk.dim("  No sessions to clean up."));
         } else {

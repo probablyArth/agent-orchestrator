@@ -45,6 +45,7 @@ export async function findProcessWebDir(pid: string): Promise<string | null> {
 
 /**
  * Wait for a port to be free (no process listening).
+ * Throws if the port is still busy after the timeout.
  */
 export async function waitForPortFree(port: number, timeoutMs: number): Promise<void> {
   const start = Date.now();
@@ -53,6 +54,7 @@ export async function waitForPortFree(port: number, timeoutMs: number): Promise<
     if (!pid) return;
     await new Promise((r) => setTimeout(r, 200));
   }
+  throw new Error(`Port ${port} still in use after ${timeoutMs}ms — old process did not exit in time`);
 }
 
 /**
