@@ -50,7 +50,8 @@ export function Dashboard({ sessions, stats, orchestratorId, projectName }: Dash
       body: JSON.stringify({ message }),
     });
     if (!res.ok) {
-      console.error(`Failed to send message to ${sessionId}:`, await res.text());
+      const text = await res.text().catch(() => "Unknown error");
+      alert(`Failed to send message to ${sessionId}: ${text}`);
     }
   };
 
@@ -60,7 +61,8 @@ export function Dashboard({ sessions, stats, orchestratorId, projectName }: Dash
       method: "POST",
     });
     if (!res.ok) {
-      console.error(`Failed to kill ${sessionId}:`, await res.text());
+      const text = await res.text().catch(() => "Unknown error");
+      alert(`Failed to kill ${sessionId}: ${text}`);
     }
   };
 
@@ -68,7 +70,22 @@ export function Dashboard({ sessions, stats, orchestratorId, projectName }: Dash
     if (!confirm(`Merge PR #${prNumber}?`)) return;
     const res = await fetch(`/api/prs/${prNumber}/merge`, { method: "POST" });
     if (!res.ok) {
-      console.error(`Failed to merge PR #${prNumber}:`, await res.text());
+      let errorMessage = `Failed to merge PR #${prNumber}`;
+      try {
+        const body = await res.json();
+        if (body.error) {
+          errorMessage += `:\n\n${body.error}`;
+        }
+        if (body.detail) {
+          errorMessage += `\n${body.detail}`;
+        }
+        if (body.blockers && Array.isArray(body.blockers) && body.blockers.length > 0) {
+          errorMessage += `\n\nBlockers:\n${body.blockers.map((b: string) => `• ${b}`).join("\n")}`;
+        }
+      } catch {
+        errorMessage += `:\n\n${await res.text().catch(() => "Unknown error")}`;
+      }
+      alert(errorMessage);
     }
   };
 
