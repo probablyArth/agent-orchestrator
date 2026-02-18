@@ -38,6 +38,7 @@ async function spawnSession(
   project: ProjectConfig,
   issueId?: string,
   openTab?: boolean,
+  customPrompt?: string,
 ): Promise<string> {
   const prefix = project.sessionPrefix || projectId;
   const num = await getNextSessionNumber(prefix);
@@ -213,18 +214,19 @@ async function spawnSession(
     console.log(`  Attach:   ${chalk.dim(`tmux attach -t ${sessionName}`)}`);
     console.log();
 
-    // Send composed prompt via tmux send-keys (keeps agent interactive for follow-ups)
-    const composedPrompt = buildPrompt({
+    // Send prompt via tmux send-keys (keeps agent interactive for follow-ups)
+    // Use custom prompt if provided, otherwise build from project/issue config
+    const finalPrompt = customPrompt ?? buildPrompt({
       project,
       projectId,
       issueId,
     });
 
-    if (composedPrompt) {
+    if (finalPrompt) {
       // Wait for agent to be fully ready (permission prompts, initialization, etc.)
       // Longer delay ensures Claude is ready to receive input before sending prompt
       await new Promise((resolve) => setTimeout(resolve, 2000));
-      await tmuxSendKeys(sessionName, composedPrompt);
+      await tmuxSendKeys(sessionName, finalPrompt);
     }
 
     // Open terminal tab if requested
@@ -252,7 +254,13 @@ export function registerSpawn(program: Command): void {
     .argument("<project>", "Project ID from config")
     .argument("[issue]", "Issue identifier (e.g. INT-1234, #42) - must exist in tracker")
     .option("--open", "Open session in terminal tab")
-    .action(async (projectId: string, issueId: string | undefined, opts: { open?: boolean }) => {
+    .option("--prompt <file>", "Read custom prompt from file")
+    .option("--prompt-text <text>", "Use custom prompt (inline text)")
+    .action(async (
+      projectId: string,
+      issueId: string | undefined,
+      opts: { open?: boolean; prompt?: string; promptText?: string },
+    ) => {
       const config = loadConfig();
       const project = config.projects[projectId];
       if (!project) {
@@ -264,8 +272,23 @@ export function registerSpawn(program: Command): void {
         process.exit(1);
       }
 
+      // Handle custom prompt
+      let customPrompt: string | undefined;
+      if (opts.promptText) {
+        customPrompt = opts.promptText;
+      } else if (opts.prompt) {
+        const { readFileSync } = await import("node:fs");
+        try {
+          customPrompt = readFileSync(opts.prompt, "utf-8");
+        } catch (err) {
+          console.error(chalk.red(`Failed to read prompt file: ${opts.prompt}`));
+          console.error(chalk.dim(String(err)));
+          process.exit(1);
+        }
+      }
+
       try {
-        await spawnSession(config, projectId, project, issueId, opts.open);
+        await spawnSession(config, projectId, project, issueId, opts.open, customPrompt);
       } catch (err) {
         // spawnSession may have printed spinner.fail, but we need error details
         console.error(chalk.red(`✗ ${err}`));
