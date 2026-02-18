@@ -219,9 +219,13 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
   async function enrichSessionWithRuntimeState(
     session: Session,
     plugins: ReturnType<typeof resolvePlugins>,
+    handleFromMetadata: boolean,
   ): Promise<void> {
-    // Check runtime liveness if we have a handle
-    if (session.runtimeHandle && plugins.runtime) {
+    // Check runtime liveness — but only if the handle came from metadata.
+    // Fabricated handles (constructed as fallback for external sessions) should
+    // NOT override status to "killed" — we don't know if the session ever had
+    // a tmux session, and we'd clobber meaningful statuses like "pr_open".
+    if (handleFromMetadata && session.runtimeHandle && plugins.runtime) {
       try {
         const alive = await plugins.runtime.isAlive(session.runtimeHandle);
         if (!alive) {
@@ -522,7 +526,8 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
 
       // Sessions created by external scripts don't store runtimeHandle —
       // fall back to using session ID as tmux session name (same as sendMessage)
-      if (!session.runtimeHandle) {
+      const handleFromMetadata = session.runtimeHandle !== null;
+      if (!handleFromMetadata) {
         session.runtimeHandle = {
           id: sessionName,
           runtimeName: project.runtime ?? config.defaults.runtime,
@@ -531,7 +536,7 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
       }
 
       const plugins = resolvePlugins(project);
-      await enrichSessionWithRuntimeState(session, plugins);
+      await enrichSessionWithRuntimeState(session, plugins, handleFromMetadata);
 
       sessions.push(session);
     }
@@ -562,7 +567,8 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
 
       // Sessions created by external scripts don't store runtimeHandle —
       // fall back to using session ID as tmux session name (same as sendMessage)
-      if (!session.runtimeHandle) {
+      const handleFromMetadata = session.runtimeHandle !== null;
+      if (!handleFromMetadata) {
         session.runtimeHandle = {
           id: sessionId,
           runtimeName: project.runtime ?? config.defaults.runtime,
@@ -571,7 +577,7 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
       }
 
       const plugins = resolvePlugins(project);
-      await enrichSessionWithRuntimeState(session, plugins);
+      await enrichSessionWithRuntimeState(session, plugins, handleFromMetadata);
 
       return session;
     }
