@@ -278,21 +278,9 @@ export async function enrichSessionIssueTitle(
   }
 }
 
-/**
- * Humanize a git branch name into a readable title.
- * e.g., "feat/infer-project-id" → "Infer Project ID"
- *       "fix/broken-auth-flow"  → "Broken Auth Flow"
- *       "session/ao-52"         → "ao-52"
- */
-export function humanizeBranch(branch: string): string {
-  // Remove common prefixes (feat/, fix/, chore/, session/, etc.)
-  const withoutPrefix = branch.replace(/^(?:feat|fix|chore|refactor|docs|test|ci|session)\//, "");
-  // Replace hyphens and underscores with spaces, then title-case each word
-  return withoutPrefix
-    .replace(/[-_]/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase())
-    .trim();
-}
+// Re-export humanizeBranch from format.ts (kept separate to avoid
+// pulling server-side TTLCache side-effects into client bundles).
+export { humanizeBranch } from "./format";
 
 /** Compute dashboard stats from a list of sessions. */
 export function computeStats(sessions: DashboardSession[]): DashboardStats {

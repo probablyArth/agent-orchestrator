@@ -11,7 +11,7 @@ import {
 import { CI_STATUS } from "@composio/ao-core/types";
 import { cn } from "@/lib/cn";
 import { activityIcon } from "@/lib/activity-icons";
-import { humanizeBranch } from "@/lib/serialize";
+import { humanizeBranch } from "@/lib/format";
 import { PRStatus } from "./PRStatus";
 import { CICheckList } from "./CIBadge";
 
