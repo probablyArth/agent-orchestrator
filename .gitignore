@@ -57,3 +57,6 @@ packages/web/agent-orchestrator.yaml
 
 # Local agent orchestrator config (may contain secrets)
 agent-orchestrator.yaml
+
+# Auto-generated orchestrator prompt (generated at runtime by `ao start`)
+CLAUDE.orchestrator.md
