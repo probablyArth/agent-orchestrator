@@ -935,30 +935,32 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
 
     if (!workspaceExists) {
       // Try to restore workspace if plugin supports it
-      if (plugins.workspace?.restore && session.branch) {
-        try {
-          const wsInfo = await plugins.workspace.restore(
-            {
-              projectId,
-              project,
-              sessionId,
-              branch: session.branch,
-            },
-            workspacePath,
-          );
-
-          // Run post-create hooks on restored workspace
-          if (plugins.workspace.postCreate) {
-            await plugins.workspace.postCreate(wsInfo, project);
-          }
-        } catch (err) {
-          throw new WorkspaceMissingError(
-            workspacePath,
-            `restore failed: ${err instanceof Error ? err.message : String(err)}`,
-          );
-        }
-      } else {
+      if (!plugins.workspace?.restore) {
         throw new WorkspaceMissingError(workspacePath, "workspace plugin does not support restore");
+      }
+      if (!session.branch) {
+        throw new WorkspaceMissingError(workspacePath, "branch metadata is missing");
+      }
+      try {
+        const wsInfo = await plugins.workspace.restore(
+          {
+            projectId,
+            project,
+            sessionId,
+            branch: session.branch,
+          },
+          workspacePath,
+        );
+
+        // Run post-create hooks on restored workspace
+        if (plugins.workspace.postCreate) {
+          await plugins.workspace.postCreate(wsInfo, project);
+        }
+      } catch (err) {
+        throw new WorkspaceMissingError(
+          workspacePath,
+          `restore failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     }
 
