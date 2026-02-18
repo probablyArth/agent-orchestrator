@@ -37,9 +37,9 @@ export function buildDashboardEnv(
   // Priority: config value > env var > default
   env["PORT"] = String(port);
 
-  const resolvedTerminalPort = String(terminalPort ?? env["TERMINAL_PORT"] ?? "3001");
+  const resolvedTerminalPort = String(terminalPort ?? env["TERMINAL_PORT"] ?? "14800");
   const resolvedDirectTerminalPort = String(
-    directTerminalPort ?? env["DIRECT_TERMINAL_PORT"] ?? "3003",
+    directTerminalPort ?? env["DIRECT_TERMINAL_PORT"] ?? "14801",
   );
 
   env["TERMINAL_PORT"] = resolvedTerminalPort;
