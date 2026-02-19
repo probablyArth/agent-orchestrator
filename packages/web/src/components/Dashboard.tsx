@@ -46,7 +46,15 @@ function applySSESnapshot(
       return s;
     }
     changed = true;
-    return { ...s, status: u.status, activity: u.activity, lastActivityAt: u.lastActivityAt };
+    return {
+      ...s,
+      status: u.status,
+      activity: u.activity,
+      lastActivityAt: u.lastActivityAt,
+      // Mirror pr.state when the server confirms a merge, so openPRs stats and
+      // the PR table stay consistent without waiting for the next full refresh.
+      pr: u.status === "merged" && s.pr?.state === "open" ? { ...s.pr, state: "merged" as const } : s.pr,
+    };
   });
   // Return original reference when nothing changed so React skips re-render.
   return changed ? next : current;
