@@ -7,7 +7,7 @@
  */
 
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, writeFileSync, readFileSync, unlinkSync, openSync, closeSync, mkdirSync } from "node:fs";
+import { existsSync, openSync, closeSync, mkdirSync } from "node:fs";
 import { resolve, join } from "node:path";
 import chalk from "chalk";
 import ora from "ora";
@@ -17,6 +17,9 @@ import {
   generateOrchestratorPrompt,
   getLogsDir,
   LogWriter,
+  readPidFile,
+  writePidFile,
+  removePidFile,
   type OrchestratorConfig,
   type ProjectConfig,
 } from "@composio/ao-core";
@@ -103,7 +106,7 @@ async function startDashboard(
     child.unref();
 
     if (child.pid) {
-      writeFileSync(join(logDir, "dashboard.pid"), String(child.pid), "utf-8");
+      writePidFile(logDir, child.pid);
     }
 
     return child;
@@ -143,7 +146,7 @@ async function startDashboard(
     child.unref();
     // Write PID to file for `ao stop` to find it
     if (logDir && child.pid) {
-      writeFileSync(join(logDir, "dashboard.pid"), String(child.pid), "utf-8");
+      writePidFile(logDir, child.pid);
     }
   }
 
@@ -165,25 +168,19 @@ async function startDashboard(
  * Best effort — if it fails, just warn the user.
  */
 async function stopDashboard(port: number, logDir: string | null): Promise<void> {
-  // Try PID file first (from background mode)
+  // Try PID file first (from background mode).
+  // readPidFile validates the process is alive via kill(pid, 0) and cleans up stale files.
   if (logDir) {
-    const pidFile = join(logDir, "dashboard.pid");
-    if (existsSync(pidFile)) {
+    const pid = readPidFile(logDir);
+    if (pid !== null) {
       try {
-        const pid = readFileSync(pidFile, "utf-8").trim();
-        if (pid) {
-          await exec("kill", [pid]);
-          unlinkSync(pidFile);
-          console.log(chalk.green("Dashboard stopped (via PID file)"));
-          return;
-        }
+        await exec("kill", [String(pid)]);
+        removePidFile(logDir);
+        console.log(chalk.green("Dashboard stopped (via PID file)"));
+        return;
       } catch {
-        // PID file exists but process may be gone — fall through to lsof
-        try {
-          unlinkSync(pidFile);
-        } catch {
-          // best effort
-        }
+        // Process gone between readPidFile and kill — clean up and fall through
+        removePidFile(logDir);
       }
     }
   }

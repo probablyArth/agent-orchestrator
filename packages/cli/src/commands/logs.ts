@@ -91,10 +91,6 @@ export function registerLogs(program: Command): void {
       try {
         const logDir = resolveLogDir();
         const entries = readLogsFromDir(logDir, "events", { sessionId });
-        if (entries.length === 0) {
-          console.log(chalk.yellow(`No events found for session "${sessionId}"`));
-          return;
-        }
         printEntries(entries, opts.json);
       } catch (err) {
         console.error(chalk.red("Error:"), err instanceof Error ? err.message : String(err));

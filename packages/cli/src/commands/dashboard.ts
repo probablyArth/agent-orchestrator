@@ -348,6 +348,8 @@ export function registerDashboard(program: Command): void {
               `  Process:  ${chalk.yellow("conflict")} ` +
                 `(PID file: ${pid}, but port ${port} held by PID ${portPid})`,
             );
+            running = false;
+            pid = null;
           }
           // else: PID file matches port process — both agree, fall through to "running"
         } else if (running) {

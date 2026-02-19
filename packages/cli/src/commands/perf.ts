@@ -33,7 +33,11 @@ export function registerPerf(program: Command): void {
         const requests = loadRequests(logDir, { since, route: opts.route });
 
         if (requests.length === 0) {
-          console.log(chalk.dim("No API request logs found."));
+          if (opts.json) {
+            console.log(JSON.stringify({}, null, 2));
+          } else {
+            console.log(chalk.dim("No API request logs found."));
+          }
           return;
         }
 
