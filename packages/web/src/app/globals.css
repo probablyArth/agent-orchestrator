@@ -29,12 +29,12 @@
   --color-text-inverse:   #0c0c11;
 
   /* ── Interactive accent ──────────────────────────────────────────── */
-  --color-accent:         #5b7ef8;
-  --color-accent-hover:   #7b9cfb;
-  --color-accent-subtle:  rgba(91, 126, 248, 0.12);
+  --color-accent:         #d18616;
+  --color-accent-hover:   #e89a20;
+  --color-accent-subtle:  rgba(209, 134, 22, 0.12);
 
   /* Aliases used in existing components */
-  --color-accent-blue:    var(--color-accent);
+  --color-accent-blue:    #5b7ef8;
 
   /* ── Status / semantic colors ────────────────────────────────────── */
   --color-status-working:   #5b7ef8;
@@ -47,7 +47,7 @@
   /* Semantic aliases used in existing components */
   --color-accent-green:   var(--color-status-ready);
   --color-accent-yellow:  var(--color-status-attention);
-  --color-accent-orange:  #d18616;
+  --color-accent-orange:  var(--color-accent);
   --color-accent-red:     var(--color-status-error);
   --color-accent-violet:  #a371f7;
   --color-accent-purple:  #bc8cff;
@@ -72,7 +72,7 @@
 body {
   font-family: var(--font-sans);
   background:
-    radial-gradient(ellipse 80% 40% at 50% -10%, rgba(91, 126, 248, 0.04) 0%, transparent 70%),
+    radial-gradient(ellipse 80% 40% at 50% -10%, rgba(209, 134, 22, 0.025) 0%, transparent 70%),
     var(--color-bg-base);
   color: var(--color-text-primary);
   min-height: 100vh;

@@ -10,7 +10,6 @@ import {
 } from "@/lib/types";
 import { CI_STATUS } from "@composio/ao-core/types";
 import { cn } from "@/lib/cn";
-import { activityIcon } from "@/lib/activity-icons";
 import { getSessionTitle } from "@/lib/format";
 import { PRStatus } from "./PRStatus";
 import { CICheckList } from "./CIBadge";
@@ -23,7 +22,6 @@ interface SessionCardProps {
   onRestore?: (sessionId: string) => void;
 }
 
-/** 8×8px CSS dot representing activity state */
 function ActivityDot({ activity }: { activity: string | null }) {
   const colorMap: Record<string, string> = {
     active: "var(--color-status-working)",
@@ -33,13 +31,14 @@ function ActivityDot({ activity }: { activity: string | null }) {
     blocked: "var(--color-status-error)",
     exited: "var(--color-status-done)",
   };
-
   const color = (activity && colorMap[activity]) ?? "var(--color-text-tertiary)";
   const isPulsing = activity === "active";
-
   return (
     <div
-      className={cn("h-2 w-2 shrink-0 rounded-full", isPulsing && "animate-[activity-pulse_2s_ease-in-out_infinite]")}
+      className={cn(
+        "h-2 w-2 shrink-0 rounded-full",
+        isPulsing && "animate-[activity-pulse_2s_ease-in-out_infinite]",
+      )}
       style={{ background: color }}
     />
   );
@@ -47,12 +46,12 @@ function ActivityDot({ activity }: { activity: string | null }) {
 
 
 const borderColorByLevel: Record<AttentionLevel, string> = {
-  merge: "border-l-[var(--color-status-ready)]",
+  merge:   "border-l-[var(--color-status-ready)]",
   respond: "border-l-[var(--color-status-error)]",
-  review: "border-l-[var(--color-accent-orange)]",
+  review:  "border-l-[var(--color-accent-orange)]",
   pending: "border-l-[var(--color-status-attention)]",
   working: "border-l-[var(--color-status-working)]",
-  done: "border-l-[var(--color-border-default)]",
+  done:    "border-l-[var(--color-border-default)]",
 };
 
 export function SessionCard({ session, onSend, onKill, onMerge, onRestore }: SessionCardProps) {
@@ -63,9 +62,7 @@ export function SessionCard({ session, onSend, onKill, onMerge, onRestore }: Ses
   const pr = session.pr;
 
   useEffect(() => {
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
   }, []);
 
   const handleAction = async (action: string, message: string) => {
@@ -82,37 +79,36 @@ export function SessionCard({ session, onSend, onKill, onMerge, onRestore }: Ses
     (session.activity !== null && TERMINAL_ACTIVITIES.has(session.activity));
   const isRestorable = isTerminal && session.status !== "merged";
 
+  const title = getSessionTitle(session);
+
   return (
     <div
       className={cn(
-        "cursor-pointer border border-[var(--color-border-default)] border-l-[3px] bg-[var(--color-bg-surface)] transition-colors duration-[250ms] hover:border-[var(--color-border-strong)]",
+        "cursor-pointer border border-[var(--color-border-default)] border-l-[3px]",
+        "bg-[var(--color-bg-surface)] transition-colors duration-200",
+        "hover:border-[var(--color-border-strong)] hover:bg-[var(--color-bg-elevated)]",
         borderColorByLevel[level],
-        expanded && "border-[var(--color-border-strong)]",
-        isReadyToMerge && "border-[rgba(34,197,94,0.35)] bg-[rgba(34,197,94,0.02)]",
-        pr?.state === "merged" && "opacity-60",
+        expanded && "border-[var(--color-border-strong)] bg-[var(--color-bg-elevated)]",
+        isReadyToMerge && "border-[rgba(34,197,94,0.3)] bg-[rgba(34,197,94,0.025)]",
+        pr?.state === "merged" && "opacity-55",
       )}
-      style={{ borderRadius: 6 }}
+      style={{ borderRadius: 7 }}
       onClick={(e) => {
         if ((e.target as HTMLElement).closest("a, button, textarea")) return;
         setExpanded(!expanded);
       }}
     >
-      {/* Top row */}
-      <div className="flex items-center gap-2 px-3 pt-3 pb-1.5">
+      {/* Header row: dot + session ID + terminal link */}
+      <div className="flex items-center gap-2 px-4 pt-4 pb-2">
         <ActivityDot activity={session.activity} />
-        <span className="shrink-0 font-[var(--font-mono)] text-[11px] text-[var(--color-text-tertiary)]">
+        <span className="font-[var(--font-mono)] text-[11px] tracking-wide text-[var(--color-text-muted)]">
           {session.id}
         </span>
-        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[var(--color-text-primary)]">
-          {getSessionTitle(session)}
-        </span>
+        <div className="flex-1" />
         {isRestorable && (
           <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onRestore?.(session.id);
-            }}
-            className="shrink-0 rounded border border-[rgba(91,126,248,0.35)] px-2 py-0.5 text-[11px] text-[var(--color-accent)] transition-colors hover:bg-[rgba(91,126,248,0.1)]"
+            onClick={(e) => { e.stopPropagation(); onRestore?.(session.id); }}
+            className="rounded border border-[rgba(209,134,22,0.35)] px-2 py-0.5 text-[11px] text-[var(--color-accent)] transition-colors hover:bg-[rgba(209,134,22,0.1)]"
           >
             restore
           </button>
@@ -121,36 +117,40 @@ export function SessionCard({ session, onSend, onKill, onMerge, onRestore }: Ses
           <a
             href={`/sessions/${encodeURIComponent(session.id)}`}
             onClick={(e) => e.stopPropagation()}
-            className="shrink-0 rounded border border-[var(--color-border-default)] px-2 py-0.5 text-[11px] text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] hover:no-underline"
+            className="rounded border border-[var(--color-border-default)] px-2.5 py-0.5 text-[11px] text-[var(--color-text-muted)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] hover:no-underline"
           >
             terminal
           </a>
         )}
       </div>
 
+      {/* Title — its own row, bigger, can wrap */}
+      <div className="px-4 pb-3">
+        <p className="text-[14px] font-semibold leading-snug text-[var(--color-text-primary)] [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:3] overflow-hidden">
+          {title}
+        </p>
+      </div>
+
       {/* Meta row: branch + PR pills */}
-      <div className="flex flex-wrap items-center gap-1.5 px-3 pb-2 pl-[26px]">
+      <div className="flex flex-wrap items-center gap-1.5 px-4 pb-2.5">
         {session.branch && (
-          <span className="font-[var(--font-mono)] text-[10px] text-[var(--color-text-tertiary)]">
+          <span className="font-[var(--font-mono)] text-[10px] text-[var(--color-text-muted)]">
             {session.branch}
           </span>
         )}
         {session.branch && pr && (
-          <span className="text-[9px] text-[var(--color-border-default)]">&middot;</span>
+          <span className="text-[9px] text-[var(--color-border-strong)]">&middot;</span>
         )}
         {pr && <PRStatus pr={pr} />}
       </div>
 
       {/* Merge button or alert tags */}
       {(alerts.length > 0 || isReadyToMerge) && (
-        <div className="flex flex-wrap items-center gap-1.5 px-3 pb-2.5 pl-[26px]">
+        <div className="flex flex-wrap items-center gap-1.5 px-4 pb-3.5">
           {isReadyToMerge && pr ? (
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onMerge?.(pr.number);
-              }}
-              className="inline-flex items-center gap-1.5 rounded border-0 bg-[var(--color-status-ready)] px-3 py-1 text-[12px] font-semibold text-[var(--color-text-inverse)] transition-[filter,transform] duration-[100ms] hover:-translate-y-px hover:brightness-110"
+              onClick={(e) => { e.stopPropagation(); onMerge?.(pr.number); }}
+              className="inline-flex items-center gap-1.5 rounded-[5px] border-0 bg-[var(--color-status-ready)] px-3 py-1.5 text-[12px] font-semibold text-[var(--color-text-inverse)] transition-[filter,transform] duration-[100ms] hover:-translate-y-px hover:brightness-110"
             >
               <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                 <path d="M5 12h14M12 5l7 7-7 7" />
@@ -159,30 +159,25 @@ export function SessionCard({ session, onSend, onKill, onMerge, onRestore }: Ses
             </button>
           ) : (
             alerts.map((alert) => (
-              <span key={alert.key}>
+              <span key={alert.key} className="flex items-center gap-1">
                 <a
                   href={alert.url}
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={(e) => e.stopPropagation()}
                   className={cn(
-                    "inline-flex items-center gap-1.5 rounded border px-2.5 py-0.5 text-[11px] font-semibold hover:brightness-125 hover:no-underline",
+                    "inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-medium hover:brightness-125 hover:no-underline",
                     alert.className,
                   )}
                 >
-                  {alert.count !== undefined && (
-                    <span className="font-bold">{alert.count}</span>
-                  )}
+                  {alert.count !== undefined && <span className="font-bold">{alert.count}</span>}
                   {alert.label}
                 </a>
                 {alert.actionLabel && session.activity !== "active" && (
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleAction(alert.key, alert.actionMessage ?? "");
-                    }}
+                    onClick={(e) => { e.stopPropagation(); handleAction(alert.key, alert.actionMessage ?? ""); }}
                     disabled={sendingAction === alert.key}
-                    className="ml-1 rounded border border-[rgba(91,126,248,0.3)] px-2 py-0.5 text-[11px] text-[var(--color-accent)] transition-colors hover:bg-[rgba(91,126,248,0.1)] disabled:opacity-50"
+                    className="rounded border border-[rgba(209,134,22,0.25)] px-2 py-0.5 text-[11px] text-[var(--color-accent)] transition-colors hover:bg-[rgba(209,134,22,0.1)] disabled:opacity-50"
                   >
                     {sendingAction === alert.key ? "sent!" : alert.actionLabel}
                   </button>
@@ -195,7 +190,7 @@ export function SessionCard({ session, onSend, onKill, onMerge, onRestore }: Ses
 
       {/* Expandable detail panel */}
       {expanded && (
-        <div className="border-t border-[var(--color-border-subtle)] px-3 py-3 pl-[26px]">
+        <div className="border-t border-[var(--color-border-subtle)] px-4 py-3.5">
           {session.summary && pr?.title && session.summary !== pr.title && (
             <DetailSection label="Summary">
               <p className="text-[12px] leading-relaxed text-[var(--color-text-secondary)]">
@@ -229,18 +224,11 @@ export function SessionCard({ session, onSend, onKill, onMerge, onRestore }: Ses
               <div className="space-y-1">
                 {pr.unresolvedComments.map((c) => (
                   <div key={c.url} className="flex items-center gap-2 text-[12px]">
-                    <span className="w-3 shrink-0 text-center text-[var(--color-status-error)]">
-                      {"\u25CF"}
-                    </span>
+                    <span className="w-3 shrink-0 text-center text-[var(--color-status-error)]">●</span>
                     <span className="min-w-0 flex-1 truncate font-[var(--font-mono)] text-[10px] text-[var(--color-text-secondary)]">
                       {c.path}
                     </span>
-                    <a
-                      href={c.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="shrink-0 text-[11px] text-[var(--color-accent)] hover:underline"
-                    >
+                    <a href={c.url} target="_blank" rel="noopener noreferrer" className="shrink-0 text-[11px] text-[var(--color-accent)] hover:underline">
                       view →
                     </a>
                   </div>
@@ -252,9 +240,7 @@ export function SessionCard({ session, onSend, onKill, onMerge, onRestore }: Ses
           {pr && (
             <DetailSection label="PR">
               <p className="text-[12px] text-[var(--color-text-secondary)]">
-                <a href={pr.url} target="_blank" rel="noopener noreferrer" className="hover:underline">
-                  {pr.title}
-                </a>
+                <a href={pr.url} target="_blank" rel="noopener noreferrer" className="hover:underline">{pr.title}</a>
                 <br />
                 <span className="text-[var(--color-status-ready)]">+{pr.additions}</span>{" "}
                 <span className="text-[var(--color-status-error)]">-{pr.deletions}</span>
@@ -265,29 +251,21 @@ export function SessionCard({ session, onSend, onKill, onMerge, onRestore }: Ses
           )}
 
           {!pr && (
-            <p className="text-[12px] text-[var(--color-text-tertiary)]">
-              No PR associated with this session.
-            </p>
+            <p className="text-[12px] text-[var(--color-text-tertiary)]">No PR associated with this session.</p>
           )}
 
           <div className="mt-3 flex gap-2 border-t border-[var(--color-border-subtle)] pt-3">
             {isRestorable && (
               <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onRestore?.(session.id);
-                }}
-                className="rounded border border-[rgba(91,126,248,0.35)] px-2.5 py-1 text-[11px] text-[var(--color-accent)] transition-colors hover:bg-[rgba(91,126,248,0.1)]"
+                onClick={(e) => { e.stopPropagation(); onRestore?.(session.id); }}
+                className="rounded border border-[rgba(209,134,22,0.35)] px-2.5 py-1 text-[11px] text-[var(--color-accent)] transition-colors hover:bg-[rgba(209,134,22,0.1)]"
               >
                 restore session
               </button>
             )}
             {!isTerminal && (
               <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onKill?.(session.id);
-                }}
+                onClick={(e) => { e.stopPropagation(); onKill?.(session.id); }}
                 className="rounded border border-[rgba(239,68,68,0.35)] px-2.5 py-1 text-[11px] text-[var(--color-status-error)] transition-colors hover:bg-[rgba(239,68,68,0.1)]"
               >
                 terminate
@@ -330,21 +308,18 @@ function getAlerts(session: DashboardSession): Alert[] {
   if (pr.ciStatus === CI_STATUS.FAILING) {
     const failedCheck = pr.ciChecks.find((c) => c.status === "failed");
     const failCount = pr.ciChecks.filter((c) => c.status === "failed").length;
-
     if (failCount === 0) {
       alerts.push({
         key: "ci-unknown",
         label: "CI unknown",
-        className:
-          "border-[rgba(245,158,11,0.3)] bg-[rgba(245,158,11,0.08)] text-[var(--color-status-attention)]",
+        className: "border-[rgba(245,158,11,0.3)] bg-[rgba(245,158,11,0.08)] text-[var(--color-status-attention)]",
         url: pr.url + "/checks",
       });
     } else {
       alerts.push({
         key: "ci-fail",
         label: `${failCount} CI check${failCount > 1 ? "s" : ""} failing`,
-        className:
-          "border-[rgba(239,68,68,0.3)] bg-[rgba(239,68,68,0.08)] text-[var(--color-status-error)]",
+        className: "border-[rgba(239,68,68,0.3)] bg-[rgba(239,68,68,0.08)] text-[var(--color-status-error)]",
         url: failedCheck?.url ?? pr.url + "/checks",
         actionLabel: "ask to fix",
         actionMessage: `Please fix the failing CI checks on ${pr.url}`,
@@ -356,16 +331,14 @@ function getAlerts(session: DashboardSession): Alert[] {
     alerts.push({
       key: "changes",
       label: "changes requested",
-      className:
-        "border-[rgba(239,68,68,0.3)] bg-[rgba(239,68,68,0.08)] text-[var(--color-status-error)]",
+      className: "border-[rgba(239,68,68,0.3)] bg-[rgba(239,68,68,0.08)] text-[var(--color-status-error)]",
       url: pr.url,
     });
   } else if (!pr.isDraft && (pr.reviewDecision === "pending" || pr.reviewDecision === "none")) {
     alerts.push({
       key: "review",
       label: "needs review",
-      className:
-        "border-[rgba(245,158,11,0.3)] bg-[rgba(245,158,11,0.08)] text-[var(--color-status-attention)]",
+      className: "border-[rgba(245,158,11,0.3)] bg-[rgba(245,158,11,0.08)] text-[var(--color-status-attention)]",
       url: pr.url,
       actionLabel: "ask to post",
       actionMessage: `Post ${pr.url} on slack asking for a review.`,
@@ -376,8 +349,7 @@ function getAlerts(session: DashboardSession): Alert[] {
     alerts.push({
       key: "conflict",
       label: "merge conflict",
-      className:
-        "border-[rgba(239,68,68,0.3)] bg-[rgba(239,68,68,0.08)] text-[var(--color-status-error)]",
+      className: "border-[rgba(239,68,68,0.3)] bg-[rgba(239,68,68,0.08)] text-[var(--color-status-error)]",
       url: pr.url,
       actionLabel: "ask to fix",
       actionMessage: `Please resolve the merge conflicts on ${pr.url} by rebasing on the base branch`,
@@ -390,8 +362,7 @@ function getAlerts(session: DashboardSession): Alert[] {
       key: "comments",
       label: "unresolved comments",
       count: pr.unresolvedThreads,
-      className:
-        "border-[rgba(239,68,68,0.3)] bg-[rgba(239,68,68,0.08)] text-[var(--color-status-error)]",
+      className: "border-[rgba(239,68,68,0.3)] bg-[rgba(239,68,68,0.08)] text-[var(--color-status-error)]",
       url: firstUrl,
       actionLabel: "ask to resolve",
       actionMessage: `Please address all unresolved review comments on ${pr.url}`,

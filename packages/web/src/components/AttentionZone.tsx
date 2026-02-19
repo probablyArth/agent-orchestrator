@@ -7,6 +7,7 @@ import { SessionCard } from "./SessionCard";
 interface AttentionZoneProps {
   level: AttentionLevel;
   sessions: DashboardSession[];
+  variant?: "column" | "grid";
   onSend?: (sessionId: string, message: string) => void;
   onKill?: (sessionId: string) => void;
   onMerge?: (prNumber: number) => void;
@@ -22,12 +23,12 @@ const zoneConfig: Record<
   }
 > = {
   merge: {
-    label: "Needs Merge",
+    label: "Merge",
     color: "var(--color-status-ready)",
     defaultCollapsed: false,
   },
   respond: {
-    label: "Needs Response",
+    label: "Respond",
     color: "var(--color-status-error)",
     defaultCollapsed: false,
   },
@@ -56,6 +57,7 @@ const zoneConfig: Record<
 export function AttentionZone({
   level,
   sessions,
+  variant = "grid",
   onSend,
   onKill,
   onMerge,
@@ -65,6 +67,58 @@ export function AttentionZone({
   const [collapsed, setCollapsed] = useState(config.defaultCollapsed);
 
   if (sessions.length === 0) return null;
+
+  if (variant === "column") {
+    return (
+      <div className="flex flex-col">
+        {/* Column header */}
+        <button
+          className="mb-2.5 flex items-center gap-2 py-0.5 text-left"
+          onClick={() => setCollapsed(!collapsed)}
+        >
+          <div
+            className="h-1.5 w-1.5 shrink-0 rounded-full"
+            style={{ background: config.color }}
+          />
+          <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--color-text-tertiary)]">
+            {config.label}
+          </span>
+          <span
+            className="rounded-full px-1.5 py-0 text-[10px] font-medium tabular-nums text-[var(--color-text-muted)]"
+            style={{ background: "var(--color-bg-subtle)" }}
+          >
+            {sessions.length}
+          </span>
+          <div className="flex-1" />
+          <svg
+            className="h-3 w-3 shrink-0 text-[var(--color-text-muted)] transition-transform duration-150"
+            style={{ transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)" }}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            viewBox="0 0 24 24"
+          >
+            <path d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+
+        {!collapsed && (
+          <div className="flex flex-col gap-2">
+            {sessions.map((session) => (
+              <SessionCard
+                key={session.id}
+                session={session}
+                onSend={onSend}
+                onKill={onKill}
+                onMerge={onMerge}
+                onRestore={onRestore}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="mb-7">

@@ -20,6 +20,8 @@ interface DashboardProps {
   projectName?: string;
 }
 
+const KANBAN_LEVELS = ["merge", "respond", "review", "pending", "working"] as const;
+
 export function Dashboard({ sessions, stats, orchestratorId, projectName }: DashboardProps) {
   const grouped = useMemo(() => {
     const zones: Record<AttentionLevel, DashboardSession[]> = {
@@ -81,43 +83,67 @@ export function Dashboard({ sessions, stats, orchestratorId, projectName }: Dash
     }
   };
 
+  const hasKanbanSessions = KANBAN_LEVELS.some((l) => grouped[l].length > 0);
+
   return (
-    <div className="mx-auto max-w-[1100px] px-8 py-8">
+    <div className="px-8 py-7">
       <DynamicFavicon sessions={sessions} projectName={projectName} />
       {/* Header */}
-      <div className="mb-9 flex items-center justify-between border-b border-[var(--color-border-subtle)] pb-5">
-        <h1 className="text-[15px] font-medium tracking-[-0.01em] text-[var(--color-text-primary)]">
-          Orchestrator
-        </h1>
-        <div className="flex items-center gap-5">
+      <div className="mb-8 flex items-center justify-between border-b border-[var(--color-border-subtle)] pb-6">
+        <div className="flex items-center gap-6">
+          <h1 className="text-[17px] font-semibold tracking-[-0.02em] text-[var(--color-text-primary)]">
+            Orchestrator
+          </h1>
           <StatusLine stats={stats} />
-          {orchestratorId && (
-            <a
-              href={`/sessions/${encodeURIComponent(orchestratorId)}`}
-              className="text-[11px] text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-text-tertiary)] hover:no-underline"
-            >
-              orchestrator ↗
-            </a>
-          )}
         </div>
-      </div>
-
-      {/* Attention zones */}
-      <div className="mb-9">
-        {(["merge", "respond", "review", "pending", "working", "done"] as AttentionLevel[]).map(
-          (level) => (
-            <AttentionZone
-              key={level}
-              level={level}
-              sessions={grouped[level]}
-              onSend={handleSend}
-              onKill={handleKill}
-              onMerge={handleMerge}
-              onRestore={handleRestore}
-            />
-          ),
+        {orchestratorId && (
+          <a
+            href={`/sessions/${encodeURIComponent(orchestratorId)}`}
+            className="flex items-center gap-1.5 rounded-[6px] border border-[var(--color-border-default)] px-4 py-2 text-[12px] font-medium text-[var(--color-text-secondary)] transition-all duration-150 hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] hover:no-underline"
+          >
+            orchestrator
+            <svg className="h-3 w-3 opacity-60" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3" />
+            </svg>
+          </a>
         )}
       </div>
+
+      {/* Kanban columns for active zones */}
+      {hasKanbanSessions && (
+        <div className="mb-8 flex gap-4 overflow-x-auto pb-2">
+          {KANBAN_LEVELS.map((level) =>
+            grouped[level].length > 0 ? (
+              <div key={level} className="w-[260px] shrink-0">
+                <AttentionZone
+                  level={level}
+                  sessions={grouped[level]}
+                  variant="column"
+                  onSend={handleSend}
+                  onKill={handleKill}
+                  onMerge={handleMerge}
+                  onRestore={handleRestore}
+                />
+              </div>
+            ) : null,
+          )}
+        </div>
+      )}
+
+      {/* Done — full-width grid below Kanban */}
+      {grouped.done.length > 0 && (
+        <div className="mb-8">
+          <AttentionZone
+            level="done"
+            sessions={grouped.done}
+            variant="grid"
+            onSend={handleSend}
+            onKill={handleKill}
+            onMerge={handleMerge}
+            onRestore={handleRestore}
+          />
+        </div>
+      )}
 
       {/* PR Table */}
       {openPRs.length > 0 && (
@@ -164,7 +190,7 @@ export function Dashboard({ sessions, stats, orchestratorId, projectName }: Dash
 
 function StatusLine({ stats }: { stats: DashboardStats }) {
   if (stats.totalSessions === 0) {
-    return <span className="text-[12px] text-[var(--color-text-muted)]">no sessions</span>;
+    return <span className="text-[13px] text-[var(--color-text-muted)]">no sessions</span>;
   }
 
   const parts: Array<{ value: number; label: string; alert?: boolean }> = [
@@ -177,22 +203,24 @@ function StatusLine({ stats }: { stats: DashboardStats }) {
   ];
 
   return (
-    <div className="flex items-center">
+    <div className="flex items-baseline gap-0.5">
       {parts.map((p, i) => (
-        <span key={p.label} className="flex items-center">
+        <span key={p.label} className="flex items-baseline">
           {i > 0 && (
-            <span className="mx-2.5 text-[10px] text-[var(--color-border-strong)]">·</span>
+            <span className="mx-3 text-[11px] text-[var(--color-border-strong)]">·</span>
           )}
           <span
-            className="text-[12px]"
+            className="text-[20px] font-bold tabular-nums tracking-tight"
             style={{
               color: p.alert
                 ? "var(--color-status-attention)"
-                : "var(--color-text-secondary)",
+                : "var(--color-text-primary)",
             }}
           >
-            <span className="font-medium tabular-nums">{p.value}</span>{" "}
-            <span style={{ color: "var(--color-text-muted)" }}>{p.label}</span>
+            {p.value}
+          </span>
+          <span className="ml-1.5 text-[11px] text-[var(--color-text-muted)]">
+            {p.label}
           </span>
         </span>
       ))}
