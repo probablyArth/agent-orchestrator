@@ -11,6 +11,7 @@ import {
   generateRulesFromTemplates,
   formatProjectTypeForDisplay,
 } from "../lib/project-detection.js";
+import { isPortAvailable, findAvailablePort } from "../lib/web-dir.js";
 
 async function prompt(
   rl: ReturnType<typeof createInterface>,
@@ -239,6 +240,19 @@ export function registerInit(program: Command): void {
           process.exit(1);
         }
 
+        // Warn if port is already in use (another ao instance, dev server, etc.)
+        if (!(await isPortAvailable(port))) {
+          console.log(
+            chalk.yellow(`\n  ⚠ Port ${port} is already in use`),
+          );
+          console.log(
+            chalk.dim(
+              `    Another service may be running on this port.\n` +
+                `    You can change it later in agent-orchestrator.yaml.\n`,
+            ),
+          );
+        }
+
         // Default plugins
         console.log(chalk.bold("\n  Default Plugins\n"));
         const runtime = await prompt(rl, "Runtime (tmux, process)", "tmux");
@@ -430,10 +444,17 @@ async function handleAutoMode(outputPath: string, smart: boolean): Promise<void>
   const path = env.isGitRepo ? workingDir : `~/${projectId}`;
   const defaultBranch = env.defaultBranch || "main";
 
+  // Auto-detect a free dashboard port (avoids conflicts when running multiple projects)
+  const DEFAULT_PORT = 3000;
+  const port = await findAvailablePort(DEFAULT_PORT);
+  if (port !== DEFAULT_PORT) {
+    console.log(chalk.yellow(`  ⚠ Port ${DEFAULT_PORT} is in use, using ${port} instead`));
+  }
+
   const config: Record<string, unknown> = {
     dataDir: "~/.agent-orchestrator",
     worktreeDir: "~/.worktrees",
-    port: 3000,
+    port,
     defaults: {
       runtime: "tmux",
       agent: "claude-code",
