@@ -791,6 +791,25 @@ describe("scm-github plugin", () => {
       expect(result.blockers).not.toContain("Required checks are failing");
     });
 
+    it("reports UNSTABLE as blocker when CI status is none (fail closed)", async () => {
+      mockGh({ state: "OPEN" }); // getPRState
+      mockGh({
+        mergeable: "MERGEABLE",
+        reviewDecision: "APPROVED",
+        mergeStateStatus: "UNSTABLE",
+        isDraft: false,
+      });
+      // All checks skipped → ciStatus "none", but GitHub says UNSTABLE
+      mockGh([{ name: "build", state: "SKIPPED" }]);
+
+      const result = await scm.getMergeability(pr);
+      // ciStatus "none" is treated as passing by the CI section, but GitHub
+      // still says UNSTABLE — we should fail closed and report the blocker.
+      expect(result.ciPassing).toBe(true);
+      expect(result.mergeable).toBe(false);
+      expect(result.blockers).toContain("Required checks are failing");
+    });
+
     it("reports changes requested as blockers", async () => {
       mockGh({ state: "OPEN" }); // getPRState
       mockGh({
