@@ -106,8 +106,9 @@ export async function enrichSessionPR(
   dashboard: DashboardSession,
   scm: SCM,
   pr: PRInfo,
-): Promise<void> {
-  if (!dashboard.pr) return;
+  opts?: { cacheOnly?: boolean },
+): Promise<boolean> {
+  if (!dashboard.pr) return false;
 
   const cacheKey = prCacheKey(pr.owner, pr.repo, pr.number);
 
@@ -128,8 +129,11 @@ export async function enrichSessionPR(
     dashboard.pr.mergeability = cached.mergeability;
     dashboard.pr.unresolvedThreads = cached.unresolvedThreads;
     dashboard.pr.unresolvedComments = cached.unresolvedComments;
-    return;
+    return true;
   }
+
+  // Cache miss — if cacheOnly, signal caller to refresh in background
+  if (opts?.cacheOnly) return false;
 
   // Fetch from SCM
   const results = await Promise.allSettled([
@@ -233,7 +237,7 @@ export async function enrichSessionPR(
       unresolvedComments: dashboard.pr.unresolvedComments,
     };
     prCache.set(cacheKey, rateLimitedData, 5 * 60_000); // 5 min — don't retry until reset
-    return;
+    return true;
   }
 
   const cacheData: PREnrichmentData = {
@@ -249,6 +253,7 @@ export async function enrichSessionPR(
     unresolvedComments: dashboard.pr.unresolvedComments,
   };
   prCache.set(cacheKey, cacheData);
+  return true;
 }
 
 /** Enrich a DashboardSession's issue label using the tracker plugin. */
