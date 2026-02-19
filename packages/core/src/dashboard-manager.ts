@@ -159,8 +159,8 @@ export async function restartDashboard(opts: DashboardRestartOpts): Promise<Dash
   if (opts.configPath) {
     env["AO_CONFIG_PATH"] = opts.configPath;
   }
-  env["NEXT_PUBLIC_TERMINAL_PORT"] = env["TERMINAL_PORT"] ?? "3001";
-  env["NEXT_PUBLIC_DIRECT_TERMINAL_PORT"] = env["DIRECT_TERMINAL_PORT"] ?? "3003";
+  env["NEXT_PUBLIC_TERMINAL_PORT"] = env["TERMINAL_PORT"] ?? "14800";
+  env["NEXT_PUBLIC_DIRECT_TERMINAL_PORT"] = env["DIRECT_TERMINAL_PORT"] ?? "14801";
 
   const child = spawn("npx", ["next", "dev", "-p", String(port)], {
     cwd: opts.webDir,

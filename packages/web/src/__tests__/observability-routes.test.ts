@@ -138,6 +138,110 @@ describe("GET /api/logs", () => {
     const json = await res.json();
     expect(json.error).toMatch(/No projects configured/);
   });
+
+  it("passes since parameter as a Date object to query options", async () => {
+    mockReadLogsFromDir.mockReturnValue([]);
+
+    const req = new Request(
+      "http://localhost:3000/api/logs?since=2026-01-15T10:00:00Z",
+    );
+    await logsGET(req);
+
+    expect(mockReadLogsFromDir).toHaveBeenCalledWith(
+      "/tmp/test-logs",
+      "events",
+      expect.objectContaining({
+        since: new Date("2026-01-15T10:00:00Z"),
+        limit: 200,
+      }),
+    );
+  });
+
+  it("parses comma-separated level parameter into an array", async () => {
+    mockReadLogsFromDir.mockReturnValue([]);
+
+    const req = new Request(
+      "http://localhost:3000/api/logs?level=info,warn,error",
+    );
+    await logsGET(req);
+
+    expect(mockReadLogsFromDir).toHaveBeenCalledWith(
+      "/tmp/test-logs",
+      "events",
+      expect.objectContaining({
+        level: ["info", "warn", "error"],
+      }),
+    );
+  });
+
+  it("passes sessionId parameter to query options", async () => {
+    mockReadLogsFromDir.mockReturnValue([]);
+
+    const req = new Request(
+      "http://localhost:3000/api/logs?sessionId=backend-3",
+    );
+    await logsGET(req);
+
+    expect(mockReadLogsFromDir).toHaveBeenCalledWith(
+      "/tmp/test-logs",
+      "events",
+      expect.objectContaining({
+        sessionId: "backend-3",
+      }),
+    );
+  });
+
+  it("applies combined filters (source + level + since)", async () => {
+    mockReadLogsFromDir.mockReturnValue([]);
+
+    const req = new Request(
+      "http://localhost:3000/api/logs?source=dashboard&level=error,warn&since=2026-02-01T00:00:00Z&limit=50",
+    );
+    await logsGET(req);
+
+    expect(mockReadLogsFromDir).toHaveBeenCalledWith(
+      "/tmp/test-logs",
+      "dashboard",
+      {
+        since: new Date("2026-02-01T00:00:00Z"),
+        level: ["error", "warn"],
+        limit: 50,
+      },
+    );
+  });
+
+  it("handles non-numeric limit parameter gracefully (defaults to NaN)", async () => {
+    mockReadLogsFromDir.mockReturnValue([]);
+
+    const req = new Request(
+      "http://localhost:3000/api/logs?limit=notanumber",
+    );
+    await logsGET(req);
+
+    // parseInt("notanumber", 10) returns NaN — still passed to readLogsFromDir
+    expect(mockReadLogsFromDir).toHaveBeenCalledWith(
+      "/tmp/test-logs",
+      "events",
+      expect.objectContaining({ limit: NaN }),
+    );
+  });
+
+  it("handles non-numeric tail parameter gracefully", async () => {
+    mockTailLogs.mockReturnValue([]);
+
+    const req = new Request(
+      "http://localhost:3000/api/logs?tail=abc",
+    );
+    const res = await logsGET(req);
+    expect(res.status).toBe(200);
+
+    // parseInt("abc", 10) returns NaN — still calls tailLogs with NaN
+    expect(mockTailLogs).toHaveBeenCalledWith(
+      "/tmp/test-logs/events.jsonl",
+      NaN,
+    );
+    expect(mockReadLogsFromDir).not.toHaveBeenCalled();
+  });
 });
 
 // ── GET /api/perf ───────────────────────────────────────────────────────
@@ -281,6 +385,222 @@ describe("GET /api/perf", () => {
     const json = await res.json();
     expect(json.error).toMatch(/No projects configured/);
   });
+
+  it("passes since parameter as Date to readLogsFromDir", async () => {
+    mockReadLogsFromDir.mockReturnValue([]);
+
+    const req = new Request(
+      "http://localhost:3000/api/perf?since=2026-02-01T12:00:00Z",
+    );
+    await perfGET(req);
+
+    expect(mockReadLogsFromDir).toHaveBeenCalledWith(
+      "/tmp/test-logs",
+      "api",
+      expect.objectContaining({
+        source: "api",
+        since: new Date("2026-02-01T12:00:00Z"),
+      }),
+    );
+  });
+
+  it("filters entries by route parameter using path.includes", async () => {
+    mockReadLogsFromDir.mockReturnValue([
+      {
+        ts: "2026-01-01T00:00:00Z",
+        level: "info",
+        source: "api",
+        sessionId: null,
+        message: "req",
+        data: { method: "GET", path: "/api/sessions", statusCode: 200, durationMs: 100 },
+      },
+      {
+        ts: "2026-01-01T00:01:00Z",
+        level: "info",
+        source: "api",
+        sessionId: null,
+        message: "req",
+        data: { method: "POST", path: "/api/spawn", statusCode: 200, durationMs: 200 },
+      },
+      {
+        ts: "2026-01-01T00:02:00Z",
+        level: "info",
+        source: "api",
+        sessionId: null,
+        message: "req",
+        data: { method: "GET", path: "/api/sessions/s-1", statusCode: 200, durationMs: 150 },
+      },
+    ]);
+
+    const req = new Request("http://localhost:3000/api/perf?route=sessions");
+    const res = await perfGET(req);
+    const json = await res.json();
+
+    // Only entries whose path includes "sessions" should appear
+    expect(json.totalRequests).toBe(3); // totalRequests is entries.length (all from readLogsFromDir)
+    // But routes should only contain session-related entries
+    expect(json.routes["POST /api/spawn"]).toBeUndefined();
+    expect(json.routes["GET /api/sessions"]).toBeDefined();
+    expect(json.routes["GET /api/sessions/:id"]).toBeDefined();
+  });
+
+  it("returns zeroed stats when no log entries exist", async () => {
+    mockReadLogsFromDir.mockReturnValue([]);
+
+    const req = new Request("http://localhost:3000/api/perf");
+    const res = await perfGET(req);
+    expect(res.status).toBe(200);
+
+    const json = await res.json();
+    expect(json.routes).toEqual({});
+    expect(json.slowest).toEqual([]);
+    expect(json.cacheStats).toBeNull();
+    expect(json.totalRequests).toBe(0);
+  });
+
+  it("returns latestCacheStats from the most recent entry with cacheStats", async () => {
+    mockReadLogsFromDir.mockReturnValue([
+      {
+        ts: "2026-01-01T00:00:00Z",
+        level: "info",
+        source: "api",
+        sessionId: null,
+        message: "req",
+        data: {
+          method: "GET",
+          path: "/api/sessions",
+          statusCode: 200,
+          durationMs: 100,
+          cacheStats: { hits: 5, misses: 2 },
+        },
+      },
+      {
+        ts: "2026-01-01T00:01:00Z",
+        level: "info",
+        source: "api",
+        sessionId: null,
+        message: "req",
+        data: {
+          method: "GET",
+          path: "/api/sessions",
+          statusCode: 200,
+          durationMs: 120,
+          cacheStats: { hits: 10, misses: 3 },
+        },
+      },
+      {
+        ts: "2026-01-01T00:02:00Z",
+        level: "info",
+        source: "api",
+        sessionId: null,
+        message: "req",
+        data: {
+          method: "GET",
+          path: "/api/sessions",
+          statusCode: 200,
+          durationMs: 80,
+          // no cacheStats in this entry
+        },
+      },
+    ]);
+
+    const req = new Request("http://localhost:3000/api/perf");
+    const res = await perfGET(req);
+    const json = await res.json();
+
+    // Should be the last entry that had cacheStats (the second one)
+    expect(json.cacheStats).toEqual({ hits: 10, misses: 3 });
+  });
+
+  it("skips entries with missing method or path fields", async () => {
+    mockReadLogsFromDir.mockReturnValue([
+      {
+        ts: "2026-01-01T00:00:00Z",
+        level: "info",
+        source: "api",
+        sessionId: null,
+        message: "req",
+        data: { path: "/api/sessions", statusCode: 200, durationMs: 100 },
+        // missing method
+      },
+      {
+        ts: "2026-01-01T00:01:00Z",
+        level: "info",
+        source: "api",
+        sessionId: null,
+        message: "req",
+        data: { method: "GET", statusCode: 200, durationMs: 200 },
+        // missing path
+      },
+      {
+        ts: "2026-01-01T00:02:00Z",
+        level: "info",
+        source: "api",
+        sessionId: null,
+        message: "req",
+        data: {},
+        // missing both
+      },
+      {
+        ts: "2026-01-01T00:03:00Z",
+        level: "info",
+        source: "api",
+        sessionId: null,
+        message: "req",
+        // no data field at all (data will be undefined, ?? {} makes it {})
+      },
+    ]);
+
+    const req = new Request("http://localhost:3000/api/perf");
+    const res = await perfGET(req);
+    const json = await res.json();
+
+    // All entries should be skipped — no routes recorded
+    expect(json.routes).toEqual({});
+    expect(json.slowest).toEqual([]);
+    expect(json.totalRequests).toBe(4); // entries.length from readLogsFromDir
+  });
+
+  it("applies combined since + route filtering", async () => {
+    mockReadLogsFromDir.mockReturnValue([
+      {
+        ts: "2026-02-01T10:00:00Z",
+        level: "info",
+        source: "api",
+        sessionId: null,
+        message: "req",
+        data: { method: "GET", path: "/api/sessions", statusCode: 200, durationMs: 100 },
+      },
+      {
+        ts: "2026-02-01T11:00:00Z",
+        level: "info",
+        source: "api",
+        sessionId: null,
+        message: "req",
+        data: { method: "POST", path: "/api/spawn", statusCode: 200, durationMs: 300 },
+      },
+    ]);
+
+    const req = new Request(
+      "http://localhost:3000/api/perf?since=2026-02-01T00:00:00Z&route=spawn",
+    );
+    const res = await perfGET(req);
+    const json = await res.json();
+
+    // since is passed to readLogsFromDir
+    expect(mockReadLogsFromDir).toHaveBeenCalledWith(
+      "/tmp/test-logs",
+      "api",
+      expect.objectContaining({
+        since: new Date("2026-02-01T00:00:00Z"),
+      }),
+    );
+
+    // route filtering happens in-memory — only spawn should appear in routes
+    expect(json.routes["POST /api/spawn"]).toBeDefined();
+    expect(json.routes["POST /api/spawn"].count).toBe(1);
+    expect(json.routes["GET /api/sessions"]).toBeUndefined();
+  });
 });
 
 // ── POST /api/client-logs ───────────────────────────────────────────────
@@ -419,5 +739,132 @@ describe("POST /api/client-logs", () => {
     const json = await res.json();
     expect(json.ok).toBe(true);
     expect(json.logged).toBe(0);
+  });
+
+  it("includes optional fields (url, stack, timing) in data when present", async () => {
+    const req = new Request("http://localhost:3000/api/client-logs", {
+      method: "POST",
+      body: JSON.stringify({
+        entries: [
+          {
+            level: "error",
+            message: "API call failed",
+            url: "/api/sessions",
+            stack: "TypeError: fetch failed\n  at fetchSessions (app.js:42)",
+            timing: { fetchMs: 2500, renderMs: 12 },
+          },
+        ],
+      }),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    const res = await clientLogsPost(req);
+    expect(res.status).toBe(200);
+
+    const json = await res.json();
+    expect(json.logged).toBe(1);
+
+    const call = mockLogWriterAppend.mock.calls[0][0];
+    expect(call.level).toBe("error");
+    expect(call.message).toBe("API call failed");
+    expect(call.data).toEqual({
+      url: "/api/sessions",
+      stack: "TypeError: fetch failed\n  at fetchSessions (app.js:42)",
+      timing: { fetchMs: 2500, renderMs: 12 },
+    });
+  });
+
+  it("omits optional fields from data when they are falsy", async () => {
+    const req = new Request("http://localhost:3000/api/client-logs", {
+      method: "POST",
+      body: JSON.stringify({
+        entries: [
+          {
+            level: "info",
+            message: "page loaded",
+            url: undefined,
+            stack: null,
+            timing: undefined,
+          },
+        ],
+      }),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    const res = await clientLogsPost(req);
+    expect(res.status).toBe(200);
+
+    const json = await res.json();
+    expect(json.logged).toBe(1);
+
+    // Falsy optional fields should not appear in data
+    const call = mockLogWriterAppend.mock.calls[0][0];
+    expect(call.data).toEqual({});
+    expect(call.data).not.toHaveProperty("url");
+    expect(call.data).not.toHaveProperty("stack");
+    expect(call.data).not.toHaveProperty("timing");
+  });
+
+  it("logs multiple valid entries in a batch and returns correct count", async () => {
+    const req = new Request("http://localhost:3000/api/client-logs", {
+      method: "POST",
+      body: JSON.stringify({
+        entries: [
+          { level: "info", message: "page loaded" },
+          { level: "warn", message: "slow render" },
+          { level: "error", message: "crash detected" },
+          { level: "info", message: "navigation complete" },
+          { level: "warn", message: "memory high" },
+        ],
+      }),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    const res = await clientLogsPost(req);
+    expect(res.status).toBe(200);
+
+    const json = await res.json();
+    expect(json.ok).toBe(true);
+    expect(json.logged).toBe(5);
+    expect(mockLogWriterAppend).toHaveBeenCalledTimes(5);
+
+    // Verify each call has source: "browser" and sessionId: null
+    for (let i = 0; i < 5; i++) {
+      const call = mockLogWriterAppend.mock.calls[i][0];
+      expect(call.source).toBe("browser");
+      expect(call.sessionId).toBeNull();
+      expect(call.ts).toBeDefined();
+    }
+  });
+
+  it("accepts a mix of valid and invalid entries (partial acceptance)", async () => {
+    const req = new Request("http://localhost:3000/api/client-logs", {
+      method: "POST",
+      body: JSON.stringify({
+        entries: [
+          { level: "info", message: "good entry 1" },            // valid
+          { level: "debug", message: "bad level" },               // invalid: "debug" not in VALID_LEVELS
+          { level: "error", message: "good entry 2" },            // valid
+          42,                                                      // invalid: not an object
+          null,                                                    // invalid: null
+          { level: "warn" },                                      // invalid: no message
+          { message: "no level" },                                // invalid: no level
+          { level: "warn", message: "good entry 3" },             // valid
+        ],
+      }),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    const res = await clientLogsPost(req);
+    expect(res.status).toBe(200);
+
+    const json = await res.json();
+    expect(json.ok).toBe(true);
+    expect(json.logged).toBe(3); // Only 3 valid entries
+
+    expect(mockLogWriterAppend).toHaveBeenCalledTimes(3);
+    expect(mockLogWriterAppend.mock.calls[0][0].message).toBe("good entry 1");
+    expect(mockLogWriterAppend.mock.calls[1][0].message).toBe("good entry 2");
+    expect(mockLogWriterAppend.mock.calls[2][0].message).toBe("good entry 3");
   });
 });

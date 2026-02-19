@@ -161,3 +161,56 @@ function extractBackupNumber(filename: string): number {
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
+
+/**
+ * A parsed API request log entry — common type shared between the CLI and dashboard.
+ * Includes sessionId from the underlying LogEntry (null if not session-scoped).
+ */
+export interface ApiLogEntry {
+  ts: string;
+  method: string;
+  path: string;
+  sessionId: string | null;
+  statusCode: number;
+  durationMs: number;
+  error?: string;
+  timings?: Record<string, number>;
+  cacheStats?: { hits: number; misses: number; hitRate: number; size: number };
+}
+
+/**
+ * Parse API log entries from a log directory into typed request objects.
+ * Shared by both `ao perf` CLI and the web dashboard's `/api/perf` route.
+ */
+export function parseApiLogs(
+  logDir: string,
+  opts?: { since?: Date; route?: string },
+): ApiLogEntry[] {
+  const entries = readLogsFromDir(logDir, "api", {
+    source: "api",
+    since: opts?.since,
+  });
+
+  const results: ApiLogEntry[] = [];
+  for (const entry of entries) {
+    const data = entry.data ?? {};
+    if (!data["method"] || !data["path"]) continue;
+
+    const req: ApiLogEntry = {
+      ts: entry.ts,
+      method: String(data["method"]),
+      path: String(data["path"]),
+      sessionId: entry.sessionId,
+      statusCode: Number(data["statusCode"]) || 0,
+      durationMs: Number(data["durationMs"]) || 0,
+      error: data["error"] ? String(data["error"]) : undefined,
+      timings: data["timings"] as Record<string, number> | undefined,
+      cacheStats: data["cacheStats"] as ApiLogEntry["cacheStats"] | undefined,
+    };
+
+    if (opts?.route && !req.path.includes(opts.route)) continue;
+    results.push(req);
+  }
+
+  return results;
+}

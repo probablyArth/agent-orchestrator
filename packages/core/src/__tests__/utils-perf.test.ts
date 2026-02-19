@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { percentile, normalizeRoutePath } from "../utils.js";
+import { percentile, normalizeRoutePath, shellEscape, escapeAppleScript, validateUrl } from "../utils.js";
 
 describe("percentile", () => {
   it("returns 0 for empty array", () => {
@@ -75,5 +75,127 @@ describe("normalizeRoutePath", () => {
     expect(normalizeRoutePath("/sessions/abc123/details")).toBe(
       "/sessions/:id/details",
     );
+  });
+});
+
+describe("shellEscape", () => {
+  it("wraps a simple string in single quotes", () => {
+    expect(shellEscape("hello")).toBe("'hello'");
+  });
+
+  it("handles empty string", () => {
+    expect(shellEscape("")).toBe("''");
+  });
+
+  it("escapes embedded single quotes", () => {
+    expect(shellEscape("it's")).toBe("'it'\\''s'");
+  });
+
+  it("escapes multiple single quotes", () => {
+    expect(shellEscape("it's a 'test'")).toBe("'it'\\''s a '\\''test'\\'''");
+  });
+
+  it("preserves dollar signs without expansion", () => {
+    // Single-quoted strings in POSIX shells do not expand $
+    expect(shellEscape("$HOME")).toBe("'$HOME'");
+  });
+
+  it("preserves backticks without expansion", () => {
+    expect(shellEscape("`whoami`")).toBe("'`whoami`'");
+  });
+
+  it("preserves double quotes literally", () => {
+    expect(shellEscape('say "hello"')).toBe("'say \"hello\"'");
+  });
+
+  it("preserves spaces and special characters", () => {
+    expect(shellEscape("hello world!")).toBe("'hello world!'");
+    expect(shellEscape("a&b|c;d")).toBe("'a&b|c;d'");
+  });
+
+  it("preserves newlines", () => {
+    expect(shellEscape("line1\nline2")).toBe("'line1\nline2'");
+  });
+});
+
+describe("escapeAppleScript", () => {
+  it("returns simple string unchanged", () => {
+    expect(escapeAppleScript("hello")).toBe("hello");
+  });
+
+  it("escapes double quotes", () => {
+    expect(escapeAppleScript('say "hello"')).toBe('say \\"hello\\"');
+  });
+
+  it("escapes backslashes", () => {
+    expect(escapeAppleScript("path\\to\\file")).toBe("path\\\\to\\\\file");
+  });
+
+  it("escapes both backslashes and double quotes", () => {
+    expect(escapeAppleScript('a\\b"c')).toBe('a\\\\b\\"c');
+  });
+
+  it("handles empty string", () => {
+    expect(escapeAppleScript("")).toBe("");
+  });
+
+  it("handles string with only backslashes", () => {
+    expect(escapeAppleScript("\\\\")).toBe("\\\\\\\\");
+  });
+
+  it("handles string with only double quotes", () => {
+    expect(escapeAppleScript('""')).toBe('\\"\\"');
+  });
+
+  it("preserves single quotes (not special in AppleScript double-quoted strings)", () => {
+    expect(escapeAppleScript("it's fine")).toBe("it's fine");
+  });
+});
+
+describe("validateUrl", () => {
+  it("accepts valid https URL", () => {
+    expect(() => validateUrl("https://example.com", "test")).not.toThrow();
+  });
+
+  it("accepts valid http URL", () => {
+    expect(() => validateUrl("http://example.com", "test")).not.toThrow();
+  });
+
+  it("accepts https URL with path and query", () => {
+    expect(() =>
+      validateUrl("https://api.github.com/repos/owner/repo?page=1", "github"),
+    ).not.toThrow();
+  });
+
+  it("rejects ftp URL", () => {
+    expect(() => validateUrl("ftp://files.example.com", "test")).toThrow(
+      /Invalid url: must be http\(s\)/,
+    );
+  });
+
+  it("rejects URL without protocol", () => {
+    expect(() => validateUrl("example.com", "test")).toThrow(
+      /Invalid url: must be http\(s\)/,
+    );
+  });
+
+  it("rejects empty string", () => {
+    expect(() => validateUrl("", "test")).toThrow(
+      /Invalid url: must be http\(s\)/,
+    );
+  });
+
+  it("rejects mailto URL", () => {
+    expect(() => validateUrl("mailto:user@example.com", "test")).toThrow(
+      /Invalid url: must be http\(s\)/,
+    );
+  });
+
+  it("includes label in error message", () => {
+    expect(() => validateUrl("bad-url", "my-plugin")).toThrow("[my-plugin]");
+  });
+
+  it("includes the invalid URL in error message", () => {
+    expect(() => validateUrl("ftp://bad", "test")).toThrow("ftp://bad");
   });
 });
