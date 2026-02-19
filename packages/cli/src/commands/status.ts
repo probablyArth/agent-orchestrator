@@ -4,7 +4,6 @@ import {
   type Agent,
   type SCM,
   type Session,
-  type PRInfo,
   type CIStatus,
   type ReviewDecision,
   type ActivityState,
@@ -22,6 +21,7 @@ import {
 } from "../lib/format.js";
 import { getAgentByName, getSCM } from "../lib/plugins.js";
 import { getSessionManager } from "../lib/create-session-manager.js";
+import { detectSessionPR } from "../lib/scm-data.js";
 
 interface SessionInfo {
   name: string;
@@ -76,41 +76,22 @@ async function gatherSessionInfo(
   const activity = session.activity;
 
   // Fetch PR, CI, and review data from SCM
-  let prNumber: number | null = null;
+  const project = projectConfig.projects[session.projectId];
+  const { prNumber, prInfo } = await detectSessionPR(session, scm, project);
   let ciStatus: CIStatus | null = null;
   let reviewDecision: ReviewDecision | null = null;
   let pendingThreads: number | null = null;
 
-  // Extract PR number from metadata URL as fallback
-  if (prUrl) {
-    const prMatch = /\/pull\/(\d+)/.exec(prUrl);
-    if (prMatch) {
-      prNumber = parseInt(prMatch[1], 10);
-    }
-  }
+  if (prInfo) {
+    const [ci, review, threads] = await Promise.all([
+      scm.getCISummary(prInfo).catch(() => null),
+      scm.getReviewDecision(prInfo).catch(() => null),
+      scm.getPendingComments(prInfo).catch(() => null),
+    ]);
 
-  if (branch) {
-    try {
-      const project = projectConfig.projects[session.projectId];
-      if (project) {
-        const prInfo: PRInfo | null = await scm.detectPR(session, project);
-        if (prInfo) {
-          prNumber = prInfo.number;
-
-          const [ci, review, threads] = await Promise.all([
-            scm.getCISummary(prInfo).catch(() => null),
-            scm.getReviewDecision(prInfo).catch(() => null),
-            scm.getPendingComments(prInfo).catch(() => null),
-          ]);
-
-          ciStatus = ci;
-          reviewDecision = review;
-          pendingThreads = threads !== null ? threads.length : null;
-        }
-      }
-    } catch {
-      // SCM lookup failed — not critical
-    }
+    ciStatus = ci;
+    reviewDecision = review;
+    pendingThreads = threads !== null ? threads.length : null;
   }
 
   return {
