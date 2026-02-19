@@ -544,7 +544,12 @@ function createGitHubSCM(): SCM {
       } else if (mergeState === "BLOCKED") {
         blockers.push("Merge is blocked by branch protection");
       } else if (mergeState === "UNSTABLE") {
-        blockers.push("Required checks are failing");
+        // UNSTABLE means required status checks exist but aren't all passing.
+        // Only treat as a blocker when CI is actually failing — pending CI
+        // is still running and shouldn't block the mergeability assessment.
+        if (ciStatus === CI_STATUS.FAILING) {
+          blockers.push("Required checks are failing");
+        }
       }
 
       // Draft

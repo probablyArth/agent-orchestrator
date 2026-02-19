@@ -773,6 +773,24 @@ describe("scm-github plugin", () => {
       expect(result.blockers).toContain("Required checks are failing");
     });
 
+    it("does not treat UNSTABLE as a blocker when CI is pending", async () => {
+      mockGh({ state: "OPEN" }); // getPRState
+      mockGh({
+        mergeable: "MERGEABLE",
+        reviewDecision: "APPROVED",
+        mergeStateStatus: "UNSTABLE",
+        isDraft: false,
+      });
+      mockGh([{ name: "build", state: "PENDING" }]);
+
+      const result = await scm.getMergeability(pr);
+      expect(result.ciPassing).toBe(false);
+      expect(result.mergeable).toBe(false);
+      // CI is pending — the only blocker should be from the CI section, not UNSTABLE
+      expect(result.blockers).toContain("CI is pending");
+      expect(result.blockers).not.toContain("Required checks are failing");
+    });
+
     it("reports changes requested as blockers", async () => {
       mockGh({ state: "OPEN" }); // getPRState
       mockGh({
