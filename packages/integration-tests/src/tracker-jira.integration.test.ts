@@ -112,8 +112,8 @@ function jiraApi<T>(method: string, path: string, body?: unknown): Promise<T> {
 // ---------------------------------------------------------------------------
 
 describe.skipIf(!canRun)("tracker-jira (integration)", () => {
-  const transport = hasComposioCredentials ? "composio" : "direct";
-  const tracker = trackerJira.create({ transport });
+  // Auto-detects transport from env: COMPOSIO_API_KEY → Composio, else direct
+  const tracker = trackerJira.create();
 
   const project: ProjectConfig = {
     name: "test-project",
@@ -124,6 +124,7 @@ describe.skipIf(!canRun)("tracker-jira (integration)", () => {
     tracker: {
       plugin: "jira",
       projectKey: JIRA_PROJECT_KEY!,
+      host: JIRA_HOST!,
     },
   };
 

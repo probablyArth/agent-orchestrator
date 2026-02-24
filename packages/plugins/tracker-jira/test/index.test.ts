@@ -14,16 +14,16 @@ vi.mock("node:https", () => ({
 // Fixtures
 // ---------------------------------------------------------------------------
 
+const TEST_HOST = "mycompany.atlassian.net";
+
 const project: ProjectConfig = {
   name: "test",
   repo: "acme/repo",
   path: "/tmp/repo",
   defaultBranch: "main",
   sessionPrefix: "test",
-  tracker: { plugin: "jira", projectKey: "PROJ" },
+  tracker: { plugin: "jira", projectKey: "PROJ", host: TEST_HOST },
 };
-
-const TEST_HOST = "mycompany.atlassian.net";
 
 /** Decode URL path, handling both %20 and + as spaces */
 function decodePath(path: string): string {
@@ -118,7 +118,6 @@ describe("tracker-jira plugin", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // Set env vars for direct transport
-    process.env["JIRA_HOST"] = TEST_HOST;
     process.env["JIRA_EMAIL"] = "test@example.com";
     process.env["JIRA_API_TOKEN"] = "test-token";
     delete process.env["COMPOSIO_API_KEY"];
@@ -465,7 +464,7 @@ describe("tracker-jira plugin", () => {
     it("throws when projectKey is missing", async () => {
       const projectWithoutKey: ProjectConfig = {
         ...project,
-        tracker: { plugin: "jira" },
+        tracker: { plugin: "jira", host: TEST_HOST },
       };
       await expect(
         tracker.createIssue!({ title: "Test", description: "" }, projectWithoutKey),

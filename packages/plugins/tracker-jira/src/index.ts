@@ -1,11 +1,14 @@
 /**
  * tracker-jira plugin — Jira as an issue tracker.
  *
- * Supports two transports selected via config.transport:
- *   1. "direct" (default) — Jira REST API v3 with Basic Auth
- *      (JIRA_HOST, JIRA_EMAIL, JIRA_API_TOKEN)
- *   2. "composio" — Composio SDK (COMPOSIO_API_KEY, optional COMPOSIO_ENTITY_ID)
- *      Still requires JIRA_HOST for URL construction.
+ * Uses the Jira REST API v3 with either:
+ * - JIRA_EMAIL + JIRA_API_TOKEN (direct API access)
+ * - COMPOSIO_API_KEY (via Composio SDK)
+ *
+ * Auto-detects which key is available and routes accordingly.
+ *
+ * The Jira host (e.g. mycompany.atlassian.net) is read from
+ * project.tracker.host at call time, not from environment variables.
  */
 
 import { request } from "node:https";
@@ -82,27 +85,20 @@ interface JiraTransitionsResponse {
 // Direct Jira API helpers
 // ---------------------------------------------------------------------------
 
-interface JiraCredentials {
-  host: string;
-  email: string;
-  apiToken: string;
-}
-
-function getJiraCredentials(): JiraCredentials {
-  const host = process.env["JIRA_HOST"];
+function getDirectCredentials(): { email: string; apiToken: string } {
   const email = process.env["JIRA_EMAIL"];
   const apiToken = process.env["JIRA_API_TOKEN"];
-  if (!host || !email || !apiToken) {
+  if (!email || !apiToken) {
     throw new Error(
-      "JIRA_HOST, JIRA_EMAIL, and JIRA_API_TOKEN environment variables are required for the Jira tracker plugin",
+      "JIRA_EMAIL and JIRA_API_TOKEN environment variables are required for the direct Jira transport",
     );
   }
-  return { host, email, apiToken };
+  return { email, apiToken };
 }
 
 /** Low-level HTTPS request helper for the direct transport. */
 function jiraHttpRequest<T>(
-  creds: JiraCredentials,
+  host: string,
   auth: string,
   method: string,
   path: string,
@@ -121,7 +117,7 @@ function jiraHttpRequest<T>(
 
     const req = request(
       {
-        hostname: creds.host,
+        hostname: host,
         path,
         method,
         headers: {
@@ -236,6 +232,16 @@ function extractDescription(desc: AdfNode | string | null): string {
 // ---------------------------------------------------------------------------
 
 const ISSUE_FIELDS_PARAM = "summary,status,labels,assignee,priority,issuetype,project,description";
+
+function getHost(project: ProjectConfig): string {
+  const host = project.tracker?.["host"] as string | undefined;
+  if (!host) {
+    throw new Error(
+      "Jira tracker requires 'host' in project tracker config (e.g. mycompany.atlassian.net)",
+    );
+  }
+  return host;
+}
 
 function mapIssue(jiraIssue: JiraIssue, host: string): Issue {
   const fields = jiraIssue.fields;
@@ -393,34 +399,39 @@ function buildCreateIssueFields(
 // Direct Jira tracker
 // ---------------------------------------------------------------------------
 
-function createDirectTracker(host: string): Tracker {
-  const creds = getJiraCredentials();
-  const auth = Buffer.from(`${creds.email}:${creds.apiToken}`).toString("base64");
+function createDirectTracker(): Tracker {
+  const { email, apiToken } = getDirectCredentials();
+  const auth = Buffer.from(`${email}:${apiToken}`).toString("base64");
 
-  const http = <T>(method: string, path: string, body?: unknown): Promise<T> =>
-    jiraHttpRequest<T>(creds, auth, method, path, body);
+  const http = <T>(host: string, method: string, path: string, body?: unknown): Promise<T> =>
+    jiraHttpRequest<T>(host, auth, method, path, body);
 
   return {
     name: "jira",
 
-    async getIssue(identifier: string, _project: ProjectConfig): Promise<Issue> {
+    async getIssue(identifier: string, project: ProjectConfig): Promise<Issue> {
+      const host = getHost(project);
       const jiraIssue = await http<JiraIssue>(
+        host,
         "GET",
         `/rest/api/3/issue/${encodeURIComponent(identifier)}`,
       );
       return mapIssue(jiraIssue, host);
     },
 
-    async isCompleted(identifier: string, _project: ProjectConfig): Promise<boolean> {
+    async isCompleted(identifier: string, project: ProjectConfig): Promise<boolean> {
+      const host = getHost(project);
       const qs = `?fields=${encodeURIComponent("status")}`;
       const jiraIssue = await http<JiraIssue>(
+        host,
         "GET",
         `/rest/api/3/issue/${encodeURIComponent(identifier)}${qs}`,
       );
       return jiraIssue.fields.status.statusCategory.key === "done";
     },
 
-    issueUrl(identifier: string, _project: ProjectConfig): string {
+    issueUrl(identifier: string, project: ProjectConfig): string {
+      const host = getHost(project);
       return `https://${host}/browse/${identifier}`;
     },
 
@@ -438,6 +449,7 @@ function createDirectTracker(host: string): Tracker {
     },
 
     async listIssues(filters: IssueFilters, project: ProjectConfig): Promise<Issue[]> {
+      const host = getHost(project);
       const { jql, maxResults } = buildJql(filters, project);
       const params = new URLSearchParams({
         jql,
@@ -445,6 +457,7 @@ function createDirectTracker(host: string): Tracker {
         fields: ISSUE_FIELDS_PARAM,
       });
       const result = await http<JiraSearchResult>(
+        host,
         "GET",
         `/rest/api/3/search/jql?${params.toString()}`,
       );
@@ -454,10 +467,13 @@ function createDirectTracker(host: string): Tracker {
     async updateIssue(
       identifier: string,
       update: IssueUpdate,
-      _project: ProjectConfig,
+      project: ProjectConfig,
     ): Promise<void> {
+      const host = getHost(project);
+
       if (update.state) {
         const transitionsData = await http<JiraTransitionsResponse>(
+          host,
           "GET",
           `/rest/api/3/issue/${encodeURIComponent(identifier)}/transitions`,
         );
@@ -470,15 +486,19 @@ function createDirectTracker(host: string): Tracker {
             `No transition found to status category "${catKey}" for issue ${identifier}`,
           );
         }
-        await http("POST", `/rest/api/3/issue/${encodeURIComponent(identifier)}/transitions`, {
-          transition: { id: transition.id },
-        });
+        await http(
+          host,
+          "POST",
+          `/rest/api/3/issue/${encodeURIComponent(identifier)}/transitions`,
+          { transition: { id: transition.id } },
+        );
       }
 
       const fieldsUpdate: Record<string, unknown> = {};
 
       if (update.labels && update.labels.length > 0) {
         const existing = await http<JiraIssue>(
+          host,
           "GET",
           `/rest/api/3/issue/${encodeURIComponent(identifier)}?fields=${encodeURIComponent("labels")}`,
         );
@@ -494,26 +514,31 @@ function createDirectTracker(host: string): Tracker {
       }
 
       if (Object.keys(fieldsUpdate).length > 0) {
-        await http("PUT", `/rest/api/3/issue/${encodeURIComponent(identifier)}`, {
+        await http(host, "PUT", `/rest/api/3/issue/${encodeURIComponent(identifier)}`, {
           fields: fieldsUpdate,
         });
       }
 
       if (update.comment) {
-        await http("POST", `/rest/api/3/issue/${encodeURIComponent(identifier)}/comment`, {
-          body: adfCommentBody(update.comment),
-        });
+        await http(
+          host,
+          "POST",
+          `/rest/api/3/issue/${encodeURIComponent(identifier)}/comment`,
+          { body: adfCommentBody(update.comment) },
+        );
       }
     },
 
     async createIssue(input: CreateIssueInput, project: ProjectConfig): Promise<Issue> {
+      const host = getHost(project);
       const projectKey = project.tracker?.["projectKey"] as string | undefined;
       if (!projectKey) {
         throw new Error("Jira tracker requires 'projectKey' in project tracker config");
       }
       const fields = buildCreateIssueFields(input, projectKey);
-      const created = await http<JiraIssue>("POST", "/rest/api/3/issue", { fields });
+      const created = await http<JiraIssue>(host, "POST", "/rest/api/3/issue", { fields });
       const full = await http<JiraIssue>(
+        host,
         "GET",
         `/rest/api/3/issue/${encodeURIComponent(created.key)}`,
       );
@@ -528,7 +553,7 @@ function createDirectTracker(host: string): Tracker {
 
 type ComposioTools = Composio["tools"];
 
-function createComposioTracker(host: string, apiKey: string, entityId: string): Tracker {
+function createComposioTracker(apiKey: string, entityId: string): Tracker {
   let clientPromise: Promise<ComposioTools> | undefined;
 
   function getClient(): Promise<ComposioTools> {
@@ -596,7 +621,8 @@ function createComposioTracker(host: string, apiKey: string, entityId: string): 
   return {
     name: "jira",
 
-    async getIssue(identifier: string, _project: ProjectConfig): Promise<Issue> {
+    async getIssue(identifier: string, project: ProjectConfig): Promise<Issue> {
+      const host = getHost(project);
       const jiraIssue = await exec<JiraIssue>("JIRA_GET_ISSUE", {
         issue_id_or_key: identifier,
       });
@@ -611,7 +637,8 @@ function createComposioTracker(host: string, apiKey: string, entityId: string): 
       return jiraIssue.fields.status.statusCategory.key === "done";
     },
 
-    issueUrl(identifier: string, _project: ProjectConfig): string {
+    issueUrl(identifier: string, project: ProjectConfig): string {
+      const host = getHost(project);
       return `https://${host}/browse/${identifier}`;
     },
 
@@ -629,6 +656,7 @@ function createComposioTracker(host: string, apiKey: string, entityId: string): 
     },
 
     async listIssues(filters: IssueFilters, project: ProjectConfig): Promise<Issue[]> {
+      const host = getHost(project);
       const { jql, maxResults } = buildJql(filters, project);
       const result = await exec<JiraSearchResult>("JIRA_SEARCH_ISSUES", {
         jql,
@@ -696,6 +724,7 @@ function createComposioTracker(host: string, apiKey: string, entityId: string): 
     },
 
     async createIssue(input: CreateIssueInput, project: ProjectConfig): Promise<Issue> {
+      const host = getHost(project);
       const projectKey = project.tracker?.["projectKey"] as string | undefined;
       if (!projectKey) {
         throw new Error("Jira tracker requires 'projectKey' in project tracker config");
@@ -723,26 +752,13 @@ export const manifest = {
   version: "0.1.0",
 };
 
-export function create(config?: Record<string, unknown>): Tracker {
-  const host = process.env["JIRA_HOST"];
-  if (!host) {
-    throw new Error("JIRA_HOST environment variable is required for the Jira tracker plugin");
-  }
-
-  const transport = (config?.transport as string) ?? "direct";
-
-  if (transport === "composio") {
-    const apiKey = process.env["COMPOSIO_API_KEY"];
-    if (!apiKey) {
-      throw new Error(
-        "COMPOSIO_API_KEY environment variable is required when using the Composio transport",
-      );
-    }
+export function create(): Tracker {
+  const composioKey = process.env["COMPOSIO_API_KEY"];
+  if (composioKey) {
     const entityId = process.env["COMPOSIO_ENTITY_ID"] ?? "default";
-    return createComposioTracker(host, apiKey, entityId);
+    return createComposioTracker(composioKey, entityId);
   }
-
-  return createDirectTracker(host);
+  return createDirectTracker();
 }
 
 export default { manifest, create } satisfies PluginModule<Tracker>;

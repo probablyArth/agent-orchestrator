@@ -31,7 +31,7 @@ const project: ProjectConfig = {
   path: "/tmp/repo",
   defaultBranch: "main",
   sessionPrefix: "test",
-  tracker: { plugin: "jira", projectKey: "PROJ" },
+  tracker: { plugin: "jira", projectKey: "PROJ", host: TEST_HOST },
 };
 
 const sampleJiraIssue = {
@@ -77,14 +77,12 @@ function mockComposioError(error: string) {
 
 let savedComposioKey: string | undefined;
 let savedEntityId: string | undefined;
-let savedJiraHost: string | undefined;
 let savedJiraEmail: string | undefined;
 let savedJiraToken: string | undefined;
 
 function saveEnv() {
   savedComposioKey = process.env["COMPOSIO_API_KEY"];
   savedEntityId = process.env["COMPOSIO_ENTITY_ID"];
-  savedJiraHost = process.env["JIRA_HOST"];
   savedJiraEmail = process.env["JIRA_EMAIL"];
   savedJiraToken = process.env["JIRA_API_TOKEN"];
 }
@@ -99,11 +97,6 @@ function restoreEnv() {
     delete process.env["COMPOSIO_ENTITY_ID"];
   } else {
     process.env["COMPOSIO_ENTITY_ID"] = savedEntityId;
-  }
-  if (savedJiraHost === undefined) {
-    delete process.env["JIRA_HOST"];
-  } else {
-    process.env["JIRA_HOST"] = savedJiraHost;
   }
   if (savedJiraEmail === undefined) {
     delete process.env["JIRA_EMAIL"];
@@ -125,9 +118,8 @@ describe("tracker-jira Composio transport", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     saveEnv();
-    // Set Composio key and JIRA_HOST, remove direct credentials
+    // Set Composio key so auto-detection picks Composio transport
     process.env["COMPOSIO_API_KEY"] = "composio_test_key";
-    process.env["JIRA_HOST"] = TEST_HOST;
     delete process.env["JIRA_EMAIL"];
     delete process.env["JIRA_API_TOKEN"];
     delete process.env["COMPOSIO_ENTITY_ID"];
@@ -137,27 +129,17 @@ describe("tracker-jira Composio transport", () => {
     restoreEnv();
   });
 
-  // ---- Transport selection ------------------------------------------------
+  // ---- Transport auto-detection -------------------------------------------
 
-  describe("transport selection", () => {
-    it("uses Composio transport when config.transport is composio", async () => {
+  describe("transport auto-detection", () => {
+    it("uses Composio transport when COMPOSIO_API_KEY is set", async () => {
       mockComposioResponse(sampleJiraIssue);
-      const tracker = create({ transport: "composio" });
+      const tracker = create();
       const issue = await tracker.getIssue("PROJ-123", project);
 
       expect(issue.id).toBe("PROJ-123");
       expect(MockComposio).toHaveBeenCalledWith({ apiKey: "composio_test_key" });
       expect(mockExecute).toHaveBeenCalledTimes(1);
-    });
-
-    it("throws when JIRA_HOST is missing", () => {
-      delete process.env["JIRA_HOST"];
-      expect(() => create({ transport: "composio" })).toThrow("JIRA_HOST");
-    });
-
-    it("throws when COMPOSIO_API_KEY is missing", () => {
-      delete process.env["COMPOSIO_API_KEY"];
-      expect(() => create({ transport: "composio" })).toThrow("COMPOSIO_API_KEY");
     });
   });
 
@@ -166,7 +148,7 @@ describe("tracker-jira Composio transport", () => {
   describe("entity ID", () => {
     it("defaults entity ID to 'default'", async () => {
       mockComposioResponse(sampleJiraIssue);
-      const tracker = create({ transport: "composio" });
+      const tracker = create();
       await tracker.getIssue("PROJ-123", project);
 
       expect(mockExecute).toHaveBeenCalledWith(
@@ -179,7 +161,7 @@ describe("tracker-jira Composio transport", () => {
       process.env["COMPOSIO_ENTITY_ID"] = "my-entity";
       mockComposioResponse(sampleJiraIssue);
 
-      const tracker = create({ transport: "composio" });
+      const tracker = create();
       await tracker.getIssue("PROJ-123", project);
 
       expect(mockExecute).toHaveBeenCalledWith(
@@ -194,7 +176,7 @@ describe("tracker-jira Composio transport", () => {
   describe("successful queries", () => {
     it("returns correct Issue from getIssue", async () => {
       mockComposioResponse(sampleJiraIssue);
-      const tracker = create({ transport: "composio" });
+      const tracker = create();
       const issue = await tracker.getIssue("PROJ-123", project);
 
       expect(issue).toEqual({
@@ -211,7 +193,7 @@ describe("tracker-jira Composio transport", () => {
 
     it("passes correct action and arguments for getIssue", async () => {
       mockComposioResponse(sampleJiraIssue);
-      const tracker = create({ transport: "composio" });
+      const tracker = create();
       await tracker.getIssue("PROJ-123", project);
 
       expect(mockExecute).toHaveBeenCalledWith("JIRA_GET_ISSUE", {
@@ -232,14 +214,14 @@ describe("tracker-jira Composio transport", () => {
         },
       };
       mockComposioResponse(doneIssue);
-      const tracker = create({ transport: "composio" });
+      const tracker = create();
       const result = await tracker.isCompleted("PROJ-123", project);
       expect(result).toBe(true);
     });
 
     it("passes fields parameter for isCompleted", async () => {
       mockComposioResponse(sampleJiraIssue);
-      const tracker = create({ transport: "composio" });
+      const tracker = create();
       await tracker.isCompleted("PROJ-123", project);
 
       expect(mockExecute).toHaveBeenCalledWith("JIRA_GET_ISSUE", {
@@ -255,7 +237,7 @@ describe("tracker-jira Composio transport", () => {
         maxResults: 30,
         startAt: 0,
       });
-      const tracker = create({ transport: "composio" });
+      const tracker = create();
       const issues = await tracker.listIssues!({}, project);
 
       expect(issues).toHaveLength(1);
@@ -269,7 +251,7 @@ describe("tracker-jira Composio transport", () => {
         maxResults: 30,
         startAt: 0,
       });
-      const tracker = create({ transport: "composio" });
+      const tracker = create();
       await tracker.listIssues!({}, project);
 
       expect(mockExecute).toHaveBeenCalledWith("JIRA_SEARCH_ISSUES", {
@@ -292,7 +274,7 @@ describe("tracker-jira Composio transport", () => {
         fields: { ...sampleJiraIssue.fields, summary: "New issue" },
       });
 
-      const tracker = create({ transport: "composio" });
+      const tracker = create();
       const issue = await tracker.createIssue!(
         { title: "New issue", description: "Desc" },
         project,
@@ -317,7 +299,7 @@ describe("tracker-jira Composio transport", () => {
       // Second: perform transition
       mockComposioResponse({});
 
-      const tracker = create({ transport: "composio" });
+      const tracker = create();
       await tracker.updateIssue!("PROJ-123", { state: "closed" }, project);
 
       expect(mockExecute).toHaveBeenCalledWith("JIRA_GET_TRANSITIONS", {
@@ -332,7 +314,7 @@ describe("tracker-jira Composio transport", () => {
 
     it("adds a comment via JIRA_ADD_COMMENT", async () => {
       mockComposioResponse({});
-      const tracker = create({ transport: "composio" });
+      const tracker = create();
       await tracker.updateIssue!("PROJ-123", { comment: "Hello" }, project);
 
       expect(mockExecute).toHaveBeenCalledWith("JIRA_ADD_COMMENT", {
@@ -350,7 +332,7 @@ describe("tracker-jira Composio transport", () => {
   describe("error handling", () => {
     it("throws on unsuccessful response", async () => {
       mockComposioError("Authentication failed");
-      const tracker = create({ transport: "composio" });
+      const tracker = create();
 
       await expect(tracker.getIssue("PROJ-123", project)).rejects.toThrow(
         "Composio Jira API error: Authentication failed",
@@ -361,7 +343,7 @@ describe("tracker-jira Composio transport", () => {
       mockExecute.mockResolvedValueOnce({
         successful: false,
       });
-      const tracker = create({ transport: "composio" });
+      const tracker = create();
 
       await expect(tracker.getIssue("PROJ-123", project)).rejects.toThrow(
         "Composio Jira API error: unknown error",
@@ -373,7 +355,7 @@ describe("tracker-jira Composio transport", () => {
         successful: true,
         data: undefined,
       });
-      const tracker = create({ transport: "composio" });
+      const tracker = create();
 
       await expect(tracker.getIssue("PROJ-123", project)).rejects.toThrow(
         "Composio Jira API returned no data",
@@ -382,7 +364,7 @@ describe("tracker-jira Composio transport", () => {
 
     it("propagates execute rejections", async () => {
       mockExecute.mockRejectedValueOnce(new Error("Network error"));
-      const tracker = create({ transport: "composio" });
+      const tracker = create();
 
       await expect(tracker.getIssue("PROJ-123", project)).rejects.toThrow("Network error");
     });
@@ -395,7 +377,7 @@ describe("tracker-jira Composio transport", () => {
       mockComposioResponse(sampleJiraIssue);
       mockComposioResponse(sampleJiraIssue);
 
-      const tracker = create({ transport: "composio" });
+      const tracker = create();
       await tracker.getIssue("PROJ-123", project);
       await tracker.isCompleted("PROJ-123", project);
 
@@ -412,7 +394,7 @@ describe("tracker-jira Composio transport", () => {
     it("times out after 30s", async () => {
       // Pre-warm the client so import() resolves before we switch to fake timers.
       mockComposioResponse(sampleJiraIssue);
-      const tracker = create({ transport: "composio" });
+      const tracker = create();
       await tracker.getIssue("PROJ-123", project);
 
       // Now switch to fake timers
